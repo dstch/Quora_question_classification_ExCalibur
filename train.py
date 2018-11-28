@@ -85,7 +85,7 @@ class train():
             "do_predict", False,
             "Whether to run the model in inference mode on the test set.")
 
-        flags.DEFINE_integer("train_batch_size", 32, "Total batch size for training.")
+        flags.DEFINE_integer("train_batch_size", 16, "Total batch size for training.")
 
         flags.DEFINE_integer("eval_batch_size", 8, "Total batch size for eval.")
 
@@ -439,100 +439,152 @@ class train():
             writer.write(tf_example.SerializeToString())
 
     def main(self):
-        bert_config = modeling.BertConfig.from_json_file(self.FLAGS.bert_config_file)
-        tf.gfile.MakeDirs(self.FLAGS.output_dir)
-        label_list = ["0", "1"]
-        tokenizer = tokenization.FullTokenizer(
-            vocab_file=self.FLAGS.vocab_file, do_lower_case=self.FLAGS.do_lower_case)
+        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+        with tf.device('/gpu:0'):
+            tf.logging.set_verbosity(tf.logging.INFO)
+            bert_config = modeling.BertConfig.from_json_file(self.FLAGS.bert_config_file)
+            tf.gfile.MakeDirs(self.FLAGS.output_dir)
+            if self.FLAGS.do_predict:
+                label_list = ["contradiction", "entailment"]
+            else:
+                label_list = ["0", "1"]
+            tokenizer = tokenization.FullTokenizer(
+                vocab_file=self.FLAGS.vocab_file, do_lower_case=self.FLAGS.do_lower_case)
 
-        tpu_cluster_resolver = None
-        if self.FLAGS.use_tpu and self.FLAGS.tpu_name:
-            tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
-                self.FLAGS.tpu_name, zone=self.FLAGS.tpu_zone, project=self.FLAGS.gcp_project)
+            tpu_cluster_resolver = None
+            if self.FLAGS.use_tpu and self.FLAGS.tpu_name:
+                tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
+                    self.FLAGS.tpu_name, zone=self.FLAGS.tpu_zone, project=self.FLAGS.gcp_project)
 
-        is_per_host = tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2
-        run_config = tf.contrib.tpu.RunConfig(
-            cluster=tpu_cluster_resolver,
-            master=self.FLAGS.master,
-            model_dir=self.FLAGS.output_dir,
-            save_checkpoints_steps=self.FLAGS.save_checkpoints_steps,
-            tpu_config=tf.contrib.tpu.TPUConfig(
-                iterations_per_loop=self.FLAGS.iterations_per_loop,
-                num_shards=self.FLAGS.num_tpu_cores,
-                per_host_input_for_training=is_per_host))
+            is_per_host = tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2
+            run_config = tf.contrib.tpu.RunConfig(
+                cluster=tpu_cluster_resolver,
+                master=self.FLAGS.master,
+                model_dir=self.FLAGS.output_dir,
+                save_checkpoints_steps=self.FLAGS.save_checkpoints_steps,
+                tpu_config=tf.contrib.tpu.TPUConfig(
+                    iterations_per_loop=self.FLAGS.iterations_per_loop,
+                    num_shards=self.FLAGS.num_tpu_cores,
+                    per_host_input_for_training=is_per_host))
+            # run_config=tf.estimator.RunConfig(
+            #     save_checkpoints_steps=self.FLAGS.save_checkpoints_steps,
+            #     model_dir=self.FLAGS.output_dir,
+            # )
+            train_examples = None
+            num_train_steps = None
+            num_warmup_steps = None
+            if self.FLAGS.do_train:
+                train_examples = self.get_train_examples(self.FLAGS.data_dir)
+                # num_train_steps = int(
+                #     len(train_examples) / self.FLAGS.train_batch_size * self.FLAGS.num_train_epochs)
+                num_train_steps = 3000
+                num_warmup_steps = int(num_train_steps * self.FLAGS.warmup_proportion)
 
-        train_examples = self.get_train_examples(self.FLAGS.data_dir)
-        num_train_steps = int(
-            len(train_examples) / self.FLAGS.train_batch_size * self.FLAGS.num_train_epochs)
-        num_warmup_steps = int(num_train_steps * self.FLAGS.warmup_proportion)
+            model_fn = self.model_fn_builder(
+                bert_config=bert_config,
+                num_labels=len(label_list),
+                init_checkpoint=self.FLAGS.init_checkpoint,
+                learning_rate=self.FLAGS.learning_rate,
+                num_train_steps=num_train_steps,
+                num_warmup_steps=num_warmup_steps,
+                use_tpu=self.FLAGS.use_tpu,
+                use_one_hot_embeddings=self.FLAGS.use_tpu)
 
-        model_fn = self.model_fn_builder(
-            bert_config=bert_config,
-            num_labels=len(label_list),
-            init_checkpoint=self.FLAGS.init_checkpoint,
-            learning_rate=self.FLAGS.learning_rate,
-            num_train_steps=num_train_steps,
-            num_warmup_steps=num_warmup_steps,
-            use_tpu=self.FLAGS.use_tpu,
-            use_one_hot_embeddings=self.FLAGS.use_tpu)
+            # If TPU is not available, this will fall back to normal Estimator on CPU
+            # or GPU.
+            estimator = tf.contrib.tpu.TPUEstimator(
+                use_tpu=self.FLAGS.use_tpu,
+                model_fn=model_fn,
+                config=run_config,
+                train_batch_size=self.FLAGS.train_batch_size,
+                eval_batch_size=self.FLAGS.eval_batch_size,
+                predict_batch_size=self.FLAGS.predict_batch_size,
+                eval_on_tpu=False
+            )
 
-        # If TPU is not available, this will fall back to normal Estimator on CPU
-        # or GPU.
-        estimator = tf.contrib.tpu.TPUEstimator(
-            use_tpu=self.FLAGS.use_tpu,
-            model_fn=model_fn,
-            config=run_config,
-            train_batch_size=self.FLAGS.train_batch_size,
-            eval_batch_size=self.FLAGS.eval_batch_size,
-            predict_batch_size=self.FLAGS.predict_batch_size)
+            if self.FLAGS.do_train:
+                train_file = os.path.join(self.FLAGS.output_dir, "train.tf_record")
+                self.file_based_convert_examples_to_features(
+                    train_examples, label_list, self.FLAGS.max_seq_length, tokenizer, train_file)
+                tf.logging.info("***** Running training *****")
+                tf.logging.info("  Num examples = %d", len(train_examples))
+                tf.logging.info("  Batch size = %d", self.FLAGS.train_batch_size)
+                tf.logging.info("  Num steps = %d", num_train_steps)
+                train_input_fn = self.file_based_input_fn_builder(
+                    input_file=train_file,
+                    seq_length=self.FLAGS.max_seq_length,
+                    is_training=True,
+                    drop_remainder=True)
+                estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
 
-        train_file = os.path.join(self.FLAGS.output_dir, "train.tf_record")
-        self.file_based_convert_examples_to_features(
-            train_examples, label_list, self.FLAGS.max_seq_length, tokenizer, train_file)
-        tf.logging.info("***** Running training *****")
-        tf.logging.info("  Num examples = %d", len(train_examples))
-        tf.logging.info("  Batch size = %d", self.FLAGS.train_batch_size)
-        tf.logging.info("  Num steps = %d", num_train_steps)
-        train_input_fn = self.file_based_input_fn_builder(
-            input_file=train_file,
-            seq_length=self.FLAGS.max_seq_length,
-            is_training=True,
-            drop_remainder=True)
-        estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
+            if self.FLAGS.do_eval:
+                eval_examples = self.get_dev_examples(self.FLAGS.data_dir)
+                eval_file = os.path.join(self.FLAGS.output_dir, "eval.tf_record")
+                self.file_based_convert_examples_to_features(
+                    eval_examples, label_list, self.FLAGS.max_seq_length, tokenizer, eval_file)
 
-        eval_examples = self.get_dev_examples(self.FLAGS.data_dir)
-        eval_file = os.path.join(self.FLAGS.output_dir, "eval.tf_record")
-        self.file_based_convert_examples_to_features(
-            eval_examples, label_list, self.FLAGS.max_seq_length, tokenizer, eval_file)
+                tf.logging.info("***** Running evaluation *****")
+                tf.logging.info("  Num examples = %d", len(eval_examples))
+                tf.logging.info("  Batch size = %d", self.FLAGS.eval_batch_size)
 
-        tf.logging.info("***** Running evaluation *****")
-        tf.logging.info("  Num examples = %d", len(eval_examples))
-        tf.logging.info("  Batch size = %d", self.FLAGS.eval_batch_size)
+                # This tells the estimator to run through the entire set.
+                eval_steps = None
+                # However, if running eval on the TPU, you will need to specify the
+                # number of steps.
+                if self.FLAGS.use_tpu:
+                    # Eval will be slightly WRONG on the TPU because it will truncate
+                    # the last batch.
+                    eval_steps = int(len(eval_examples) / self.FLAGS.eval_batch_size)
 
-        # This tells the estimator to run through the entire set.
-        eval_steps = None
-        # However, if running eval on the TPU, you will need to specify the
-        # number of steps.
-        if self.FLAGS.use_tpu:
-            # Eval will be slightly WRONG on the TPU because it will truncate
-            # the last batch.
-            eval_steps = int(len(eval_examples) / self.FLAGS.eval_batch_size)
+                eval_drop_remainder = True if self.FLAGS.use_tpu else False
+                eval_input_fn = self.file_based_input_fn_builder(
+                    input_file=eval_file,
+                    seq_length=self.FLAGS.max_seq_length,
+                    is_training=False,
+                    drop_remainder=eval_drop_remainder)
 
-        eval_drop_remainder = True if self.FLAGS.use_tpu else False
-        eval_input_fn = self.file_based_input_fn_builder(
-            input_file=eval_file,
-            seq_length=self.FLAGS.max_seq_length,
-            is_training=False,
-            drop_remainder=eval_drop_remainder)
+                result = estimator.evaluate(input_fn=eval_input_fn, steps=eval_steps)
 
-        result = estimator.evaluate(input_fn=eval_input_fn, steps=eval_steps)
+                output_eval_file = os.path.join(self.FLAGS.output_dir, "eval_results.txt")
+                with tf.gfile.GFile(output_eval_file, "w") as writer:
+                    tf.logging.info("***** Eval results *****")
+                    for key in sorted(result.keys()):
+                        tf.logging.info("  %s = %s", key, str(result[key]))
+                        writer.write("%s = %s\n" % (key, str(result[key])))
 
-        output_eval_file = os.path.join(self.FLAGS.output_dir, "eval_results.txt")
-        with tf.gfile.GFile(output_eval_file, "w") as writer:
-            tf.logging.info("***** Eval results *****")
-            for key in sorted(result.keys()):
-                tf.logging.info("  %s = %s", key, str(result[key]))
-                writer.write("%s = %s\n" % (key, str(result[key])))
+            if self.FLAGS.do_predict:
+                predict_examples = self.get_test_examples(self.FLAGS.data_dir)
+                predict_file = os.path.join(self.FLAGS.output_dir, "predict.tf_record")
+                self.file_based_convert_examples_to_features(predict_examples, label_list,
+                                                             self.FLAGS.max_seq_length, tokenizer,
+                                                             predict_file)
+
+                tf.logging.info("***** Running prediction*****")
+                tf.logging.info("  Num examples = %d", len(predict_examples))
+                tf.logging.info("  Batch size = %d", self.FLAGS.predict_batch_size)
+
+                if self.FLAGS.use_tpu:
+                    # Warning: According to tpu_estimator.py Prediction on TPU is an
+                    # experimental feature and hence not supported here
+                    raise ValueError("Prediction in TPU not supported")
+
+                predict_drop_remainder = True if self.FLAGS.use_tpu else False
+                predict_input_fn = self.file_based_input_fn_builder(
+                    input_file=predict_file,
+                    seq_length=self.FLAGS.max_seq_length,
+                    is_training=False,
+                    drop_remainder=predict_drop_remainder)
+
+                result = estimator.predict(input_fn=predict_input_fn)
+
+                output_predict_file = os.path.join(self.FLAGS.output_dir, "test_results.csv")
+                with tf.gfile.GFile(output_predict_file, "w") as writer:
+                    tf.logging.info("***** Predict results *****")
+                    for prediction in result:
+                        output_line = "\t".join(
+                            str(class_probability) for class_probability in prediction) + "\n"
+                        writer.write(output_line)
 
     def get_train_examples(self, data_dir):
         return self._create_examples(
@@ -554,20 +606,28 @@ class train():
             if i == 0:
                 continue
             guid = "%s-%s" % (set_type, tokenization.convert_to_unicode(line[0]))
-            text_a = tokenization.convert_to_unicode(line[1])
-            # text_b = tokenization.convert_to_unicode(line[9])
-            if set_type == "test":
-                label = "contradiction"
-            else:
-                label = tokenization.convert_to_unicode(line[-1])
-            examples.append(
-                InputExample(guid=guid, text_a=text_a, label=label))
+            try:
+                text_a = tokenization.convert_to_unicode(line[1])
+                # text_b = tokenization.convert_to_unicode(line[9])
+                if set_type == "test":
+                    label = "contradiction"
+                else:
+                    label = tokenization.convert_to_unicode(line[-1])
+                examples.append(
+                    InputExample(guid=guid, text_a=text_a, label=label))
+            except:
+                tf.logging.info('error:', line)
         return examples
 
     def get_dev_examples(self, data_dir):
         return self._create_examples(
             self._read_csv(os.path.join(data_dir, "dev.csv")),
             "dev_matched")
+
+    def get_test_examples(self, data_dir):
+        """See base class."""
+        return self._create_examples(
+            self._read_csv(os.path.join(data_dir, "test.csv")), "test")
 
 
 if __name__ == '__main__':
