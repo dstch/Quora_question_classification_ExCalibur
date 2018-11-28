@@ -1,5 +1,5 @@
 import tensorflow as tf
-from bert_master import modeling, tokenization, optimization
+from bert import modeling, tokenization, optimization
 import os, collections, csv
 
 
