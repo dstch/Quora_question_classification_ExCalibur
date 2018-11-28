@@ -6,9 +6,7 @@ class bi_lstm():
         self.n_hidden = 256
         self.num_step = 32
 
-    def model(self, FLAGS, weights, biases):
-        input_data = tf.placeholder(dtype=tf.int32, shape=[None, FLAGS.num_step], name='input data')
-
+    def model(self, FLAGS, input_data, weights, biases):
         # forward and backward direction cell , add dropout layer
         lstm_fw_cell = tf.nn.rnn_cell.BasicLSTMCell(FLAGS.n_hidden)
         lstm_fw_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_fw_cell, output_keep_prob=0.7)
