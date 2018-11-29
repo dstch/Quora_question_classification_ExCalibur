@@ -8,8 +8,8 @@ tf.logging.set_verbosity(tf.logging.INFO)
 flags = tf.flags
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("train_data_path", "", "train data path")
-flags.DEFINE_string("test_data_path", "", "test data path")
+flags.DEFINE_string("train_data_path", "./train_data/train.csv", "train data path")
+flags.DEFINE_string("test_data_path", "./train_data/test.csv", "test data path")
 flags.DEFINE_integer("n_hidden", 256, "LSTM hidden layer num of features")
 flags.DEFINE_integer("num_step", 32, "input data timesteps")
 flags.DEFINE_integer("n_classes", 2, "number of classes")
