@@ -11,16 +11,10 @@ def get_batch_data(texts, labels):
 def read_data(file_queue):
     reader = tf.TextLineReader(skip_header_lines=1)
     key, value = reader.read(file_queue)
-    defaults = [[0], [0.], [0.], [0.], [0.], ['']]
-    Id, SepalLengthCm, SepalWidthCm, PetalLengthCm, PetalWidthCm, Species = tf.decode_csv(value, defaults)
+    defaults = [[0], [''], [0]]
+    qid, question_text, target = tf.decode_csv(value, defaults)
 
-    preprocess_op = tf.case({
-        tf.equal(Species, tf.constant('Iris-setosa')): lambda: tf.constant(0),
-        tf.equal(Species, tf.constant('Iris-versicolor')): lambda: tf.constant(1),
-        tf.equal(Species, tf.constant('Iris-virginica')): lambda: tf.constant(2),
-    }, lambda: tf.constant(-1), exclusive=True)
-
-    return tf.stack([SepalLengthCm, SepalWidthCm, PetalLengthCm, PetalWidthCm]), preprocess_op
+    return question_text, target
 
 
 def create_pipeline(filename, batch_size, num_epochs=None):

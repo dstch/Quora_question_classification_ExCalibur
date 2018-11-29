@@ -1,20 +1,32 @@
 import tensorflow as tf
 from .bi_lstm_model import bi_lstm
+from .data_helper import create_pipeline
+
+tf.logging.set_verbosity(tf.logging.INFO)
 
 # parameters config
 flags = tf.flags
 FLAGS = flags.FLAGS
 
+flags.DEFINE_string("train_data_path", "", "train data path")
+flags.DEFINE_string("test_data_path", "", "test data path")
 flags.DEFINE_integer("n_hidden", 256, "LSTM hidden layer num of features")
 flags.DEFINE_integer("num_step", 32, "input data timesteps")
 flags.DEFINE_integer("n_classes", 2, "number of classes")
 flags.DEFINE_integer("learning_rate", 0.001, "learnning rate")
 flags.DEFINE_integer("batch_size", 128, "batch size")
 flags.DEFINE_integer("max_steps", 4000, "max step,stop condition")
+flags.DEFINE_integer("display_step", 1000, "save model steps")
+flags.DEFINE_string("train_writer_path", "./logs/train", "train tensorboard save path")
+flags.DEFINE_string("test_writer_path", "./logs/train", "test tensorboard save path")
 
 # tensorflow graph input
 input_data = tf.placeholder(dtype=tf.int32, shape=[None, FLAGS.num_step], name='input data')
 y = tf.placeholder("float", [None, FLAGS.n_classes])
+
+# get data batch
+x_train_batch, y_train_batch = create_pipeline(FLAGS.train_data_path, FLAGS.batch_size, num_epochs=FLAGS.max_steps)
+x_test, y_test = create_pipeline(FLAGS.test_data_path, FLAGS.batch_size)
 
 # Define weights
 weights = {
@@ -35,11 +47,44 @@ optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate).minimize(c
 correct_pred = tf.equal(tf.argmax(pred, 1), tf.argmax(y, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 
+# tensorboard
+tf.summary.scalar('loss', cost)
+tf.summary.scalar('accuracy', accuracy)
+merged_summary = tf.summary.merge_all()
+
 # Initializing the variables
 init = tf.global_variables_initializer()
 
+tf.logging.info('Start Training...')
+
 with tf.Session() as sess:
+    train_writer = tf.summary.FileWriter(FLAGS.train_writer_path, sess.graph)
+    test_writer = tf.summary.FileWriter(FLAGS.test_writer_path, sess.graph)
+
     sess.run(init)
+    coord = tf.train.Coordinator()
+    threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     step = 1
-    while step * FLAGS.batch_size < FLAGS.max_steps:
-        pass
+    curr_x_test_batch, curr_y_test_batch = sess.run([x_test, y_test])
+    while not coord.should_stop():
+        curr_x_train_batch, curr_y_train_batch = sess.run([x_train_batch, y_train_batch])
+
+        sess.run(optimizer, feed_dict={
+            input_data: curr_x_train_batch,
+            y: curr_y_train_batch
+        })
+        if step % FLAGS.display_step == 0:
+            # Calculate batch accuracy
+            acc = sess.run(accuracy, feed_dict={input_data: curr_x_train_batch, y: curr_y_train_batch})
+            # Calculate batch loss
+            loss = sess.run(cost, feed_dict={input_data: curr_x_train_batch, y: curr_y_train_batch})
+            tf.logging.info("Iter " + str(step) + ", Minibatch Loss= " + \
+                            "{:.6f}".format(loss) + ", Training Accuracy= " + \
+                            "{:.5f}".format(acc))
+            tf.logging.info("Step:%d ,Testing Accuracy:" % step,
+                            sess.run(accuracy, feed_dict={input_data: curr_x_test_batch, y: curr_y_test_batch}))
+        step += 1
+
+    tf.logging.info("Optimization Finished!")
+    coord.request_stop()
+    coord.join(threads)
