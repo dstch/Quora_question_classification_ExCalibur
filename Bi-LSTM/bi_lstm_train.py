@@ -19,6 +19,7 @@ flags.DEFINE_integer("max_steps", 4000, "max step,stop condition")
 flags.DEFINE_integer("display_step", 1000, "save model steps")
 flags.DEFINE_string("train_writer_path", "./logs/train", "train tensorboard save path")
 flags.DEFINE_string("test_writer_path", "./logs/train", "test tensorboard save path")
+flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
 
 # tensorflow graph input
 input_data = tf.placeholder(dtype=tf.int32, shape=[None, FLAGS.num_step], name='input data')
@@ -57,6 +58,8 @@ init = tf.global_variables_initializer()
 
 tf.logging.info('Start Training...')
 
+saver = tf.train.Saver()
+
 with tf.Session() as sess:
     train_writer = tf.summary.FileWriter(FLAGS.train_writer_path, sess.graph)
     test_writer = tf.summary.FileWriter(FLAGS.test_writer_path, sess.graph)
@@ -83,6 +86,7 @@ with tf.Session() as sess:
                             "{:.5f}".format(acc))
             tf.logging.info("Step:%d ,Testing Accuracy:" % step,
                             sess.run(accuracy, feed_dict={input_data: curr_x_test_batch, y: curr_y_test_batch}))
+            saver.save(sess, FLAGS.checkpoint_path, global_step=step)
         step += 1
 
     tf.logging.info("Optimization Finished!")
