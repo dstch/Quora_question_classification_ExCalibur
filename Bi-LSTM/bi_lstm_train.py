@@ -1,6 +1,6 @@
 import tensorflow as tf
-from .bi_lstm_model import bi_lstm
-from .data_helper import create_pipeline
+from bi_lstm_model import bi_lstm
+from data_helper import create_pipeline
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -8,12 +8,12 @@ tf.logging.set_verbosity(tf.logging.INFO)
 flags = tf.flags
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("train_data_path", "./train_data/train.csv", "train data path")
-flags.DEFINE_string("test_data_path", "./train_data/test.csv", "test data path")
+flags.DEFINE_string("train_data_path", "../train_data/train.csv", "train data path")
+flags.DEFINE_string("test_data_path", "../train_data/dev.csv", "test data path")
 flags.DEFINE_integer("n_hidden", 256, "LSTM hidden layer num of features")
 flags.DEFINE_integer("num_step", 32, "input data timesteps")
 flags.DEFINE_integer("n_classes", 2, "number of classes")
-flags.DEFINE_integer("learning_rate", 0.001, "learnning rate")
+flags.DEFINE_float("learning_rate", 0.001, "learnning rate")
 flags.DEFINE_integer("batch_size", 128, "batch size")
 flags.DEFINE_integer("max_steps", 4000, "max step,stop condition")
 flags.DEFINE_integer("display_step", 1000, "save model steps")
@@ -22,7 +22,7 @@ flags.DEFINE_string("test_writer_path", "./logs/train", "test tensorboard save p
 flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
 
 # tensorflow graph input
-input_data = tf.placeholder(dtype=tf.int32, shape=[None, FLAGS.num_step], name='input data')
+input_data = tf.placeholder(dtype=tf.int32, shape=[None, FLAGS.num_step], name='input_data')
 y = tf.placeholder("float", [None, FLAGS.n_classes])
 
 # get data batch
