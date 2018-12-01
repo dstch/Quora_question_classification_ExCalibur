@@ -3,3 +3,4 @@ raw_data
 .idea
 /Bi-LSTM/temp.py
 /CNN/temp.py
+Bi-LSTM/logs/
