@@ -14,8 +14,10 @@ from tensorflow.contrib import learn
 
 # Data loading params
 tf.flags.DEFINE_float("dev_sample_percentage", .1, "Percentage of the training data to use for validation")
-tf.flags.DEFINE_string("positive_data_file", "./data/rt-polaritydata/rt-polarity.pos", "Data source for the positive data.")
-tf.flags.DEFINE_string("negative_data_file", "./data/rt-polaritydata/rt-polarity.neg", "Data source for the negative data.")
+tf.flags.DEFINE_string("positive_data_file", "./data/rt-polaritydata/rt-polarity.pos",
+                       "Data source for the positive data.")
+tf.flags.DEFINE_string("negative_data_file", "./data/rt-polaritydata/rt-polarity.neg",
+                       "Data source for the negative data.")
 
 # Model Hyperparameters
 tf.flags.DEFINE_integer("embedding_dim", 128, "Dimensionality of character embedding (default: 128)")
@@ -35,6 +37,8 @@ tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device 
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
 
 FLAGS = tf.flags.FLAGS
+
+
 # FLAGS._parse_flags()
 # print("\nParameters:")
 # for attr, value in sorted(FLAGS.__flags.items()):
@@ -72,14 +76,15 @@ def preprocess():
     print("Train/Dev split: {:d}/{:d}".format(len(y_train), len(y_dev)))
     return x_train, y_train, vocab_processor, x_dev, y_dev
 
+
 def train(x_train, y_train, vocab_processor, x_dev, y_dev):
     # Training
     # ==================================================
 
     with tf.Graph().as_default():
         session_conf = tf.ConfigProto(
-          allow_soft_placement=FLAGS.allow_soft_placement,
-          log_device_placement=FLAGS.log_device_placement)
+            allow_soft_placement=FLAGS.allow_soft_placement,
+            log_device_placement=FLAGS.log_device_placement)
         sess = tf.Session(config=session_conf)
         with sess.as_default():
             cnn = TextCNN(
@@ -90,6 +95,24 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                 filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
                 num_filters=FLAGS.num_filters,
                 l2_reg_lambda=FLAGS.l2_reg_lambda)
+
+            def embbedding(x_train, x_dev):
+                vocab, embd = data_helpers.loadGloVe(filename)
+                vocab_size = len(vocab)
+                embedding_dim = len(embd[0])
+                embedding = np.asarray(embd)
+
+                W_x_train = tf.Variable(tf.constant(0.0, shape=[vocab_size, embedding_dim]),
+                                        trainable=False, name="W")
+                W_x_dev = tf.Variable(tf.constant(0.0, shape=[vocab_size, embedding_dim]),
+                                      trainable=False, name="W")
+                embedding_placeholder = tf.placeholder(tf.float32, [vocab_size, embedding_dim])
+                embedding_init = W.assign(embedding_placeholder)
+
+                sess.run(embedding_init, feed_dict={embedding_placeholder: embedding})
+                return tf.nn.embedding_lookup(W_x_train, x_train), tf.nn.embedding_lookup(W_x_dev, x_dev)
+
+            x_train, x_dev = embbedding(x_train, x_dev)
 
             # Define Training procedure
             global_step = tf.Variable(0, name="global_step", trainable=False)
@@ -144,9 +167,9 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                 A single training step
                 """
                 feed_dict = {
-                  cnn.input_x: x_batch,
-                  cnn.input_y: y_batch,
-                  cnn.dropout_keep_prob: FLAGS.dropout_keep_prob
+                    cnn.input_x: x_batch,
+                    cnn.input_y: y_batch,
+                    cnn.dropout_keep_prob: FLAGS.dropout_keep_prob
                 }
                 _, step, summaries, loss, accuracy = sess.run(
                     [train_op, global_step, train_summary_op, cnn.loss, cnn.accuracy],
@@ -160,9 +183,9 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                 Evaluates model on a dev set
                 """
                 feed_dict = {
-                  cnn.input_x: x_batch,
-                  cnn.input_y: y_batch,
-                  cnn.dropout_keep_prob: 1.0
+                    cnn.input_x: x_batch,
+                    cnn.input_y: y_batch,
+                    cnn.dropout_keep_prob: 1.0
                 }
                 step, summaries, loss, accuracy = sess.run(
                     [global_step, dev_summary_op, cnn.loss, cnn.accuracy],
@@ -188,9 +211,11 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                     path = saver.save(sess, checkpoint_prefix, global_step=current_step)
                     print("Saved model checkpoint to {}\n".format(path))
 
+
 def main(argv=None):
     x_train, y_train, vocab_processor, x_dev, y_dev = preprocess()
     train(x_train, y_train, vocab_processor, x_dev, y_dev)
+
 
 if __name__ == '__main__':
     tf.app.run()

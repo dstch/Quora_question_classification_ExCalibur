@@ -25,16 +25,17 @@ def clean_str(string):
     return string.strip().lower()
 
 
-def load_data_and_labels(positive_data_file, negative_data_file):
+def load_data_and_labels():
     """
     Loads MR polarity data from files, splits the data into words and generates labels.
     Returns split sentences and labels.
     """
     data_file = '../train_data/train.csv'
+    data = pd.read_csv(data_file)
+    positive_examples = data[data['target'].isin(0)]['question_text'].values.tolist()
+    negative_examples = data[data['target'].isin(1)]['question_text'].values.tolist()
     # Load data from files
-    positive_examples = list(open(positive_data_file, "r", encoding='utf-8').readlines())
     positive_examples = [s.strip() for s in positive_examples]
-    negative_examples = list(open(negative_data_file, "r", encoding='utf-8').readlines())
     negative_examples = [s.strip() for s in negative_examples]
     # Split by words
     x_text = positive_examples + negative_examples
@@ -64,3 +65,18 @@ def batch_iter(data, batch_size, num_epochs, shuffle=True):
             start_index = batch_num * batch_size
             end_index = min((batch_num + 1) * batch_size, data_size)
             yield shuffled_data[start_index:end_index]
+
+
+def loadGloVe(filename, emb_size):
+    vocab = []
+    embd = []
+    vocab.append('unk')  # 装载不认识的词
+    embd.append([0] * emb_size)  # 这个emb_size可能需要指定
+    file = open(filename, 'r')
+    for line in file.readlines():
+        row = line.strip().split(' ')
+        vocab.append(row[0])
+        embd.append(row[1:])
+    print('Loaded GloVe!')
+    file.close()
+    return vocab, embd
