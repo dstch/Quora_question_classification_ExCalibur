@@ -1,6 +1,6 @@
 import tensorflow as tf
 from bi_lstm_model import bi_lstm
-from data_helper import create_pipeline
+from data_helper import create_pipeline, load_embedding_from_disks
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -26,8 +26,11 @@ input_data = tf.placeholder(dtype=tf.int32, shape=[None, FLAGS.num_step], name='
 y = tf.placeholder("float", [None, FLAGS.n_classes])
 
 # get data batch
-x_train_batch, y_train_batch = create_pipeline(FLAGS.train_data_path, FLAGS.batch_size, num_epochs=FLAGS.max_steps)
-x_test, y_test = create_pipeline(FLAGS.test_data_path, FLAGS.batch_size)
+tf.logging.info("Loading embedding from disks...")
+word_to_index, index_to_embedding = load_embedding_from_disks(with_indexes=True)
+x_train_batch, y_train_batch = create_pipeline(word_to_index, index_to_embedding, FLAGS.train_data_path,
+                                               FLAGS.batch_size, num_epochs=FLAGS.max_steps)
+x_test, y_test = create_pipeline(word_to_index, index_to_embedding, FLAGS.test_data_path, FLAGS.batch_size)
 
 # Define weights
 weights = {
@@ -68,6 +71,33 @@ with tf.Session() as sess:
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     step = 1
+
+    # embedding layer
+    tf.logging.info("Loading embedding from disks...")
+    word_to_index, index_to_embedding = load_embedding_from_disks(with_indexes=True)
+    tf.logging.info("Embedding loaded from disks.")
+    # Define the variable that will hold the embedding:
+    tf_embedding = tf.Variable(
+        tf.constant(0.0, shape=index_to_embedding.shape),
+        trainable=False,
+        name="Embedding"
+    )
+    tf_word_ids = tf.placeholder(tf.int32, shape=[FLAGS.batch_size])
+    tf_word_representation_layer = tf.nn.embedding_lookup(
+        params=tf_embedding,
+        ids=tf_word_ids
+    )
+    tf_embedding_placeholder = tf.placeholder(tf.float32, shape=index_to_embedding.shape)
+    tf_embedding_init = tf_embedding.assign(tf_embedding_placeholder)
+    _ = sess.run(
+        tf_embedding_init,
+        feed_dict={
+            tf_embedding_placeholder: index_to_embedding
+        }
+    )
+    print("Embedding now stored in TensorFlow. Can delete numpy array to clear some CPU RAM.")
+    del index_to_embedding
+
     curr_x_test_batch, curr_y_test_batch = sess.run([x_test, y_test])
     while not coord.should_stop():
         curr_x_train_batch, curr_y_train_batch = sess.run([x_train_batch, y_train_batch])
