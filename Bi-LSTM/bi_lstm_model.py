@@ -1,6 +1,7 @@
 import tensorflow as tf
 
 
+# https://cuiqingcai.com/5001.html
 class bi_lstm():
     def __init__(self):
         self.n_hidden = 256
@@ -13,6 +14,6 @@ class bi_lstm():
         lstm_bw_cell = tf.nn.rnn_cell.BasicLSTMCell(FLAGS.n_hidden)
         lstm_bw_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_bw_cell, output_keep_prob=0.7)
 
-        outputs, _, _ = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, input_data, dtype=tf.int32)
+        outputs, _, _ = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, input_data, dtype=tf.float32)
 
-        return tf.matmul(outputs[-1], weights['out'] + biases['out'])
+        return tf.matmul(outputs[-1], weights['out']) + biases['out']

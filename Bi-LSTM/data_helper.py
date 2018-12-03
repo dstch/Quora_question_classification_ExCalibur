@@ -46,5 +46,5 @@ def create_pipeline(filename, batch_size, num_epochs=None):
         [example, label], batch_size=batch_size, capacity=capacity,
         min_after_dequeue=min_after_dequeue
     )
-    example_batch = [tf.string_split(x) for x in example_batch]
+    # example_batch = [tf.string_split(x) for x in example_batch]
     return example_batch, label_batch

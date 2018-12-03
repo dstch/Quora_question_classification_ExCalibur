@@ -1,6 +1,6 @@
 import tensorflow as tf
-from .bi_lstm_model import bi_lstm
-from .data_helper import create_pipeline, build_embedding_layer, loadGloVe
+from bi_lstm_model import bi_lstm
+from data_helper import create_pipeline, build_embedding_layer, loadGloVe
 import numpy as np
 
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -23,9 +23,11 @@ flags.DEFINE_string("test_writer_path", "./logs/train", "test tensorboard save p
 flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
 flags.DEFINE_string("glove_path", "../glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
 flags.DEFINE_integer("embedding_dim", 300, "word embedding dim")
+flags.DEFINE_integer("seq_length", 30, "sentence max length")
 
 # tensorflow graph input
-input_data = tf.placeholder(dtype=tf.int32, shape=[None, FLAGS.num_step], name='input_data')
+input_data = tf.placeholder(dtype=tf.float32, shape=[None, FLAGS.seq_length, FLAGS.num_step], name='input_data')
+
 y = tf.placeholder("float", [None, FLAGS.n_classes])
 
 # get data batch
