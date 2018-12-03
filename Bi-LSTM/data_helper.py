@@ -7,7 +7,7 @@ def loadGloVe(filename, emb_size):
     embd = []
     vocab.append('unk')  # 装载不认识的词
     embd.append([0] * emb_size)  # 这个emb_size可能需要指定
-    file = open(filename, 'r')
+    file = open(filename, 'r', encoding='utf-8')
     for line in file.readlines():
         row = line.strip().split(' ')
         vocab.append(row[0])
@@ -24,7 +24,7 @@ def build_embedding_layer(vocab, embd):
     W = tf.Variable(tf.constant(0.0, shape=[vocab_size, embedding_dim]), trainable=False, name="W")
     embedding_placeholder = tf.placeholder(tf.float32, [vocab_size, embedding_dim])
     embedding_init = W.assign(embedding_placeholder)
-    return embedding_init, embedding, W, embedding_placeholder,vocab_size
+    return embedding_init, embedding, W, embedding_placeholder, vocab_size
 
 
 def read_data(file_queue):
