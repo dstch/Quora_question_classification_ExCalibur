@@ -1,6 +1,7 @@
 import tensorflow as tf
-from bi_lstm_model import bi_lstm
-from data_helper import create_pipeline, load_embedding_from_disks
+from .bi_lstm_model import bi_lstm
+from .data_helper import create_pipeline, build_embedding_layer, loadGloVe
+import numpy as np
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -20,17 +21,17 @@ flags.DEFINE_integer("display_step", 1000, "save model steps")
 flags.DEFINE_string("train_writer_path", "./logs/train", "train tensorboard save path")
 flags.DEFINE_string("test_writer_path", "./logs/train", "test tensorboard save path")
 flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
+flags.DEFINE_string("glove_path", "../glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
+flags.DEFINE_integer("embedding_dim", 300, "word embedding dim")
 
 # tensorflow graph input
 input_data = tf.placeholder(dtype=tf.int32, shape=[None, FLAGS.num_step], name='input_data')
 y = tf.placeholder("float", [None, FLAGS.n_classes])
 
 # get data batch
-tf.logging.info("Loading embedding from disks...")
-word_to_index, index_to_embedding = load_embedding_from_disks(with_indexes=True)
-x_train_batch, y_train_batch = create_pipeline(word_to_index, index_to_embedding, FLAGS.train_data_path,
+x_train_batch, y_train_batch = create_pipeline(FLAGS.train_data_path,
                                                FLAGS.batch_size, num_epochs=FLAGS.max_steps)
-x_test, y_test = create_pipeline(word_to_index, index_to_embedding, FLAGS.test_data_path, FLAGS.batch_size)
+x_test, y_test = create_pipeline(FLAGS.test_data_path, FLAGS.batch_size)
 
 # Define weights
 weights = {
@@ -73,30 +74,17 @@ with tf.Session() as sess:
     step = 1
 
     # embedding layer
-    tf.logging.info("Loading embedding from disks...")
-    word_to_index, index_to_embedding = load_embedding_from_disks(with_indexes=True)
-    tf.logging.info("Embedding loaded from disks.")
-    # Define the variable that will hold the embedding:
-    tf_embedding = tf.Variable(
-        tf.constant(0.0, shape=index_to_embedding.shape),
-        trainable=False,
-        name="Embedding"
-    )
-    tf_word_ids = tf.placeholder(tf.int32, shape=[FLAGS.batch_size])
-    tf_word_representation_layer = tf.nn.embedding_lookup(
-        params=tf_embedding,
-        ids=tf_word_ids
-    )
-    tf_embedding_placeholder = tf.placeholder(tf.float32, shape=index_to_embedding.shape)
-    tf_embedding_init = tf_embedding.assign(tf_embedding_placeholder)
-    _ = sess.run(
-        tf_embedding_init,
-        feed_dict={
-            tf_embedding_placeholder: index_to_embedding
-        }
-    )
-    print("Embedding now stored in TensorFlow. Can delete numpy array to clear some CPU RAM.")
-    del index_to_embedding
+    vocab, embd = loadGloVe(FLAGS.glove_path, FLAGS.embedding_dim)
+    embedding_init, embedding, W, embedding_placeholder, vocab_size = build_embedding_layer(vocab, embd)
+    sess.run(embedding_init, feed_dict={embedding_placeholder: embedding})
+
+    # init vocab processor
+    vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor(vocab_size)
+    # fit the vocab from glove
+    pretrain = vocab_processor.fit(vocab)
+    # transform inputs
+    x_train_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_train_batch))))
+    x_test = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_test))))
 
     curr_x_test_batch, curr_y_test_batch = sess.run([x_test, y_test])
     while not coord.should_stop():
