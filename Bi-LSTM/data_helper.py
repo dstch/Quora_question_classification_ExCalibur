@@ -48,3 +48,21 @@ def create_pipeline(filename, batch_size, num_epochs=None):
     )
     # example_batch = [tf.string_split(x) for x in example_batch]
     return example_batch, label_batch
+
+
+def read_from_tfrecords(tfrecord_dir):
+    """
+    read data from tf_records
+    :param tfrecord_dir:
+    :return:
+    """
+    # build file queue
+    file_queue = tf.train.string_input_producer([tfrecord_dir])
+    # build reader
+    reader = tf.TFRecordReader()
+    key, value = reader.read(file_queue)
+
+    features = tf.parse_single_example(value, features={
+        "features": tf.FixedLenFeature([], tf.float32),
+        "label": tf.FixedLenFeature([], tf.string)
+    })
