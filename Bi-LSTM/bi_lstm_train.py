@@ -74,6 +74,7 @@ with tf.Session() as sess:
     train_writer = tf.summary.FileWriter(FLAGS.train_writer_path, sess.graph)
     test_writer = tf.summary.FileWriter(FLAGS.test_writer_path, sess.graph)
 
+    sess.run(tf.local_variables_initializer())
     sess.run(init)
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
