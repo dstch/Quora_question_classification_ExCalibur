@@ -1,6 +1,6 @@
 import tensorflow as tf
 from bi_lstm_model import bi_lstm
-from data_helper import create_pipeline, build_embedding_layer, loadGloVe
+from data_helper import read_from_tfrecords
 import numpy as np
 
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -11,6 +11,8 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string("train_data_path", "../train_data/train.csv", "train data path")
 flags.DEFINE_string("test_data_path", "../train_data/dev.csv", "test data path")
+flags.DEFINE_string("train_tfrecord_path", "../train_data/train.tf_record", "train data path")
+flags.DEFINE_string("test_tfrecord_path", "../train_data/dev.tf_record", "test data path")
 flags.DEFINE_integer("n_hidden", 256, "LSTM hidden layer num of features")
 flags.DEFINE_integer("num_step", 32, "input data timesteps")
 flags.DEFINE_integer("n_classes", 2, "number of classes")
@@ -21,7 +23,7 @@ flags.DEFINE_integer("display_step", 1000, "save model steps")
 flags.DEFINE_string("train_writer_path", "./logs/train", "train tensorboard save path")
 flags.DEFINE_string("test_writer_path", "./logs/train", "test tensorboard save path")
 flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
-flags.DEFINE_string("glove_path", "../glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
+flags.DEFINE_string("glove_path", "./glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
 flags.DEFINE_integer("embedding_dim", 300, "word embedding dim")
 flags.DEFINE_integer("seq_length", 30, "sentence max length")
 
@@ -31,9 +33,11 @@ input_data = tf.placeholder(dtype=tf.float32, shape=[None, FLAGS.seq_length, FLA
 y = tf.placeholder("float", [None, FLAGS.n_classes])
 
 # get data batch
-x_train_batch, y_train_batch = create_pipeline(FLAGS.train_data_path,
-                                               FLAGS.batch_size, num_epochs=FLAGS.max_steps)
-x_test, y_test = create_pipeline(FLAGS.test_data_path, FLAGS.batch_size)
+# x_train_batch, y_train_batch = create_pipeline(FLAGS.train_data_path,
+#                                                FLAGS.batch_size, num_epochs=FLAGS.max_steps)
+# x_test, y_test = create_pipeline(FLAGS.test_data_path, FLAGS.batch_size)
+x_train_batch, y_train_batch = read_from_tfrecords(FLAGS.train_tfrecord_path, FLAGS.batch_size)
+x_test, y_test = read_from_tfrecords(FLAGS.test_tfrecord_path, FLAGS.batch_size)
 
 # Define weights
 weights = {
@@ -75,18 +79,18 @@ with tf.Session() as sess:
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     step = 1
 
-    # embedding layer
-    vocab, embd = loadGloVe(FLAGS.glove_path, FLAGS.embedding_dim)
-    embedding_init, embedding, W, embedding_placeholder, vocab_size = build_embedding_layer(vocab, embd)
-    sess.run(embedding_init, feed_dict={embedding_placeholder: embedding})
-
-    # init vocab processor
-    vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor(vocab_size)
-    # fit the vocab from glove
-    pretrain = vocab_processor.fit(vocab)
-    # transform inputs
-    x_train_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_train_batch))))
-    x_test = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_test))))
+    # # embedding layer
+    # vocab, embd = loadGloVe(FLAGS.glove_path, FLAGS.embedding_dim)
+    # embedding_init, embedding, W, embedding_placeholder, vocab_size = build_embedding_layer(vocab, embd)
+    # sess.run(embedding_init, feed_dict={embedding_placeholder: embedding})
+    #
+    # # init vocab processor
+    # vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor(vocab_size)
+    # # fit the vocab from glove
+    # pretrain = vocab_processor.fit(vocab)
+    # # transform inputs
+    # x_train_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_train_batch))))
+    # x_test = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_test))))
 
     curr_x_test_batch, curr_y_test_batch = sess.run([x_test, y_test])
     while not coord.should_stop():

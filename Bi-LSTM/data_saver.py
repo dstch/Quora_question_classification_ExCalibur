@@ -76,10 +76,13 @@ def build_embedding_model(glove_file, gensim_file):
 
 
 if __name__ == '__main__':
-    glove_file = '../glove.840B.300d/glove.840B.300d.txt'
-    gensim_file = '../glove.840B.300d/glove_model.txt'
-    input_file = '../train_data/dev.csv'
+    glove_file = './glove.840B.300d/glove.840B.300d.txt'
+    gensim_file = './glove.840B.300d/glove_model.txt'
+    dev_input_file = '../train_data/dev.csv'
     embedding_dim = 300
-    save_path = '../train_data/dev.tf_record'
+    dev_save_path = '../train_data/dev.tf_record'
+    train_input_file = '../train_data/train.csv'
+    train_save_path = '../train_data/train.tf_record'
     # build_embedding_model(glove_file, gensim_file)
-    embedding_sentence(gensim_file, input_file, embedding_dim, save_path)
+    # embedding_sentence(gensim_file, dev_input_file, embedding_dim, dev_save_path)
+    embedding_sentence(gensim_file, train_input_file, embedding_dim, train_save_path)
