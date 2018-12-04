@@ -50,9 +50,10 @@ def create_pipeline(filename, batch_size, num_epochs=None):
     return example_batch, label_batch
 
 
-def read_from_tfrecords(tfrecord_dir):
+def read_from_tfrecords(tfrecord_dir, batch_size):
     """
     read data from tf_records
+    TensorFlow基础5：TFRecords文件的存储与读取讲解及代码实现
     :param tfrecord_dir:
     :return:
     """
@@ -66,3 +67,9 @@ def read_from_tfrecords(tfrecord_dir):
         "features": tf.FixedLenFeature([], tf.float32),
         "label": tf.FixedLenFeature([], tf.string)
     })
+
+    label = features["label"]  # tf.cast(features["label"], tf.string)
+    vector = features["features"]
+
+    vector_batch, label_batch = tf.train.batch([vector, label], batch_size=batch_size, num_threads=1, capacity=10)
+    return vector_batch, label_batch
