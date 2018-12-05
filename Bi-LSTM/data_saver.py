@@ -18,7 +18,7 @@ def _read_csv(input_file):
         return lines[1:]  # remove header
 
 
-def sentence_split(sentence):
+def sentence_split(sentence, max_length):
     """
     remove punctuation and split sentence.return list of words
     :param sentence:
@@ -28,10 +28,14 @@ def sentence_split(sentence):
     sentence = [x for x in sentence if x not in string.punctuation]
     sentence = ''.join(sentence)
     words = sentence.split()
+    if len(words) > max_length:
+        words = words[:max_length]
+    elif len(words) < max_length:
+        words = words + [" "] * (max_length - len(words))
     return words
 
 
-def embedding_sentence(model_file, input_file, embedding_dim, save_path):
+def embedding_sentence(model_file, input_file, max_length, embedding_dim, save_path):
     """
     get data set and save to tfrecord
     :param data_dir:
@@ -41,7 +45,7 @@ def embedding_sentence(model_file, input_file, embedding_dim, save_path):
     split_lines = []
     label_list = []
     for line in lines:
-        split_lines.append(sentence_split(line[1]))
+        split_lines.append(sentence_split(line[1], max_length))
         label_list.append(int(line[2]))
     del lines
     # load glove model
@@ -49,16 +53,19 @@ def embedding_sentence(model_file, input_file, embedding_dim, save_path):
 
     writer = tf.python_io.TFRecordWriter(save_path)
     for index, line in enumerate(split_lines):
-        vector = [0] * embedding_dim
+        bytes_words = []
         for word in line:
-            if word in model:
-                vector = vector + model[word]
-        vector = np.array(vector) / len(line)
+            bytes_words.append(str.encode(word))
+        # vector = []
+        # for word in line:
+        #     if word in model:
+        #         vector.append(model[word])
+        # vector = np.array(vector) / len(line)
         example = tf.train.Example(features=tf.train.Features(feature={
             "label":
                 tf.train.Feature(int64_list=tf.train.Int64List(value=[label_list[index]])),
             "features":
-                tf.train.Feature(float_list=tf.train.FloatList(value=vector))
+                tf.train.Feature(bytes_list=tf.train.BytesList(value=bytes_words))
         }))
         writer.write(example.SerializeToString())
 
@@ -86,5 +93,5 @@ if __name__ == '__main__':
     train_input_file = '../train_data/train.csv'
     train_save_path = '../train_data/train.tf_record'
     # build_embedding_model(glove_file, gensim_file)
-    # embedding_sentence(gensim_file, dev_input_file, embedding_dim, dev_save_path)
-    embedding_sentence(gensim_file, train_input_file, embedding_dim, train_save_path)
+    # embedding_sentence(gensim_file, dev_input_file, 30, embedding_dim, dev_save_path)
+    embedding_sentence(gensim_file, train_input_file, 30,embedding_dim, train_save_path)
