@@ -79,7 +79,7 @@ with tf.Session() as sess:
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     step = 1
-
+    tf.logging.info("into embedding layer")
     # embedding layer
     vocab, embd = loadGloVe(FLAGS.glove_path, FLAGS.embedding_dim)
     embedding_init, embedding, W, embedding_placeholder, vocab_size = build_embedding_layer(vocab, embd)
@@ -94,6 +94,7 @@ with tf.Session() as sess:
     x_test = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_test))))
 
     curr_x_test_batch, curr_y_test_batch = sess.run([x_test, y_test])
+    tf.logging.info("step into train loop")
     while not coord.should_stop():
         curr_x_train_batch, curr_y_train_batch = sess.run([x_train_batch, y_train_batch])
 

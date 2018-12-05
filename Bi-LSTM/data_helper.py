@@ -71,7 +71,7 @@ def read_from_tfrecords(tfrecord_dir, batch_size):  # , max_length, embedding_di
     label = features["label"]  # tf.cast(features["label"], tf.string)
     vector = features["features"]
 
-    vector_batch, label_batch = tf.train.batch([vector, label], batch_size=batch_size, num_threads=1, capacity=10)
+    vector_batch, label_batch = tf.train.batch([vector, label], batch_size=batch_size, num_threads=4, capacity=32)
     # vector_batch shape is [batch_size,embedding_dim] and bi-lstm input must be [batch_size,max_time,depth]
     # max_time can be sentence max length and depth can be word embedding dimensions
     # reshape vector_batch
