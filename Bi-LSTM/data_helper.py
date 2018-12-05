@@ -50,7 +50,7 @@ def create_pipeline(filename, batch_size, num_epochs=None):
     return example_batch, label_batch
 
 
-def read_from_tfrecords(tfrecord_dir, batch_size):
+def read_from_tfrecords(tfrecord_dir, batch_size, max_length, embedding_dim):
     """
     read data from tf_records
     TensorFlow基础5：TFRecords文件的存储与读取讲解及代码实现
@@ -72,4 +72,9 @@ def read_from_tfrecords(tfrecord_dir, batch_size):
     vector = features["features"]
 
     vector_batch, label_batch = tf.train.batch([vector, label], batch_size=batch_size, num_threads=1, capacity=10)
+    # vector_batch shape is [batch_size,embedding_dim] and bi-lstm input must be [batch_size,max_time,depth]
+    # max_time can be sentence max length and depth can be word embedding dimensions
+    # reshape vector_batch
+    vector_batch = tf.reshape(vector, [batch_size, max_length, embedding_dim])
+
     return vector_batch, label_batch
