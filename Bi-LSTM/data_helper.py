@@ -64,8 +64,8 @@ def read_from_tfrecords(tfrecord_dir, batch_size):
     key, value = reader.read(file_queue)
 
     features = tf.parse_single_example(value, features={
-        "features": tf.FixedLenFeature([], tf.float32),
-        "label": tf.FixedLenFeature([], tf.string)
+        "features": tf.FixedLenFeature([300], tf.float32),
+        "label": tf.FixedLenFeature([], tf.int64)
     })
 
     label = features["label"]  # tf.cast(features["label"], tf.string)

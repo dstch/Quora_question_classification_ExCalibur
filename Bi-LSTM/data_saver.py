@@ -1,4 +1,4 @@
-import csv, re
+import csv, re, string
 import tensorflow as tf
 import gensim
 import numpy as np
@@ -24,7 +24,9 @@ def sentence_split(sentence):
     :param sentence:
     :return:
     """
-    sentence = re.sub("[\s+\.\!\/_,$%^*(+\"\')]+|[+——()?【】“”！，。？、~@#￥%……&*（）]+'", "", sentence)
+    # sentence = re.sub("[\s+\.\!\/_,$%^*(+\"\')]+|[+——()?【】“”！，。？、~@#￥%……&*（）]+'", "", sentence)
+    sentence = [x for x in sentence if x not in string.punctuation]
+    sentence = ''.join(sentence)
     words = sentence.split()
     return words
 
