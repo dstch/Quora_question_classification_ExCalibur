@@ -1,6 +1,6 @@
 import tensorflow as tf
 from bi_lstm_model import bi_lstm
-from data_helper import read_from_tfrecords,loadGloVe,build_embedding_layer
+from data_helper import read_from_tfrecords, loadGloVe, build_embedding_layer
 import numpy as np
 
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -23,7 +23,8 @@ flags.DEFINE_integer("display_step", 1000, "save model steps")
 flags.DEFINE_string("train_writer_path", "./logs/train", "train tensorboard save path")
 flags.DEFINE_string("test_writer_path", "./logs/train", "test tensorboard save path")
 flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
-flags.DEFINE_string("glove_path", "./glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
+# flags.DEFINE_string("glove_path", "./glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
+flags.DEFINE_string("glove_path", "../train_data/vocab.txt", "pre-train embedding model path")
 flags.DEFINE_integer("embedding_dim", 300, "word embedding dim")
 flags.DEFINE_integer("seq_length", 30, "sentence max length")
 
@@ -83,20 +84,22 @@ with tf.Session() as sess:
     # embedding layer
     vocab, embd = loadGloVe(FLAGS.glove_path, FLAGS.embedding_dim)
     embedding_init, embedding, W, embedding_placeholder, vocab_size = build_embedding_layer(vocab, embd)
-    sess.run(embedding_init, feed_dict={embedding_placeholder: embedding})
+    W = sess.run(embedding_init, feed_dict={embedding_placeholder: embedding})
 
     # init vocab processor
     vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor(vocab_size)
     # fit the vocab from glove
     pretrain = vocab_processor.fit(vocab)
     # transform inputs
-    x_train_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_train_batch))))
-    x_test = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_test))))
+    # x_train_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_train_batch))))
+    # x_test = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_test))))
 
     curr_x_test_batch, curr_y_test_batch = sess.run([x_test, y_test])
+    curr_x_test_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(curr_x_test_batch))))
     tf.logging.info("step into train loop")
     while not coord.should_stop():
         curr_x_train_batch, curr_y_train_batch = sess.run([x_train_batch, y_train_batch])
+        curr_x_train_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(curr_x_train_batch))))
 
         sess.run(optimizer, feed_dict={
             input_data: curr_x_train_batch,
