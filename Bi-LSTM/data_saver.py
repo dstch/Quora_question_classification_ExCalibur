@@ -1,7 +1,6 @@
-import csv, re, string
+import csv, string
 import tensorflow as tf
 import gensim
-import numpy as np
 
 
 def _read_csv(input_file):
@@ -38,7 +37,7 @@ def sentence_split(sentence, max_length):
         return words
 
 
-def embedding_sentence(model_file, input_file, max_length, embedding_dim, save_path):
+def embedding_sentence(input_file, save_path, max_length):
     """
     get data set and save to tfrecord
     :param data_dir:
@@ -57,11 +56,6 @@ def embedding_sentence(model_file, input_file, max_length, embedding_dim, save_p
         bytes_words = []
         for word in line:
             bytes_words.append(str.encode(word))
-        # vector = []
-        # for word in line:
-        #     if word in model:
-        #         vector.append(model[word])
-        # vector = np.array(vector) / len(line)
         example = tf.train.Example(features=tf.train.Features(feature={
             "label":
                 tf.train.Feature(int64_list=tf.train.Int64List(value=[label_list[index]])),
@@ -104,12 +98,13 @@ if __name__ == '__main__':
     gensim_file = './glove.840B.300d/glove_model.txt'
     dev_input_file = '../train_data/dev.csv'
     embedding_dim = 300
+    max_length = 15
     dev_save_path = '../train_data/dev.tf_record'
     train_input_file = '../train_data/train.csv'
     train_save_path = '../train_data/train.tf_record'
     data_file = '../train_data/deal_train_data.csv'
     vocab_path = '../train_data/vocab.txt'
     # build_embedding_model(glove_file, gensim_file)
-    # embedding_sentence(gensim_file, dev_input_file, 30, embedding_dim, dev_save_path)
-    # embedding_sentence(gensim_file, train_input_file, 30, embedding_dim, train_save_path)
-    build_vocab(gensim_file, data_file, vocab_path)
+    embedding_sentence(dev_input_file, dev_save_path, max_length)
+    embedding_sentence(train_input_file, train_save_path, max_length)
+    # build_vocab(gensim_file, data_file, vocab_path)

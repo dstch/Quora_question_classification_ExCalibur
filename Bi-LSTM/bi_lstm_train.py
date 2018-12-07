@@ -1,6 +1,6 @@
 import tensorflow as tf
 from bi_lstm_model import bi_lstm
-from data_helper import read_from_tfrecords, loadGloVe, build_embedding_layer
+from data_helper import read_from_tfrecords, loadGloVe, build_embedding_layer, decode_array
 import numpy as np
 
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -13,20 +13,20 @@ flags.DEFINE_string("train_data_path", "../train_data/train.csv", "train data pa
 flags.DEFINE_string("test_data_path", "../train_data/dev.csv", "test data path")
 flags.DEFINE_string("train_tfrecord_path", "../train_data/train.tf_record", "train data path")
 flags.DEFINE_string("test_tfrecord_path", "../train_data/dev.tf_record", "test data path")
-flags.DEFINE_integer("n_hidden", 256, "LSTM hidden layer num of features")
-flags.DEFINE_integer("num_step", 32, "input data timesteps")
+flags.DEFINE_integer("n_hidden", 128, "LSTM hidden layer num of features")
+flags.DEFINE_integer("num_step", 16, "input data timesteps")
 flags.DEFINE_integer("n_classes", 2, "number of classes")
-flags.DEFINE_float("learning_rate", 0.001, "learnning rate")
+flags.DEFINE_float("learning_rate", 0.01, "learnning rate")
 flags.DEFINE_integer("batch_size", 32, "batch size")
 flags.DEFINE_integer("max_steps", 4000, "max step,stop condition")
-flags.DEFINE_integer("display_step", 1000, "save model steps")
+flags.DEFINE_integer("display_step", 50, "save model steps")
 flags.DEFINE_string("train_writer_path", "./logs/train", "train tensorboard save path")
 flags.DEFINE_string("test_writer_path", "./logs/train", "test tensorboard save path")
 flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
 # flags.DEFINE_string("glove_path", "./glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
 flags.DEFINE_string("glove_path", "../train_data/vocab.txt", "pre-train embedding model path")
 flags.DEFINE_integer("embedding_dim", 300, "word embedding dim")
-flags.DEFINE_integer("seq_length", 30, "sentence max length")
+flags.DEFINE_integer("seq_length", 15, "sentence max length")
 
 # tensorflow graph input
 input_data = tf.placeholder(dtype=tf.float32, shape=[None, FLAGS.seq_length, FLAGS.embedding_dim], name='input_data')
@@ -37,8 +37,8 @@ y = tf.placeholder("float", [None, FLAGS.n_classes])
 # x_train_batch, y_train_batch = create_pipeline(FLAGS.train_data_path,
 #                                                FLAGS.batch_size, num_epochs=FLAGS.max_steps)
 # x_test, y_test = create_pipeline(FLAGS.test_data_path, FLAGS.batch_size)
-x_train_batch, y_train_batch = read_from_tfrecords(FLAGS.train_tfrecord_path, FLAGS.batch_size)
-x_test, y_test = read_from_tfrecords(FLAGS.test_tfrecord_path, FLAGS.batch_size)
+x_train_batch, y_train_batch = read_from_tfrecords(FLAGS.train_tfrecord_path, FLAGS.batch_size, FLAGS.seq_length)
+x_test, y_test = read_from_tfrecords(FLAGS.test_tfrecord_path, FLAGS.batch_size, FLAGS.seq_length)
 
 # Define weights
 weights = {
@@ -49,7 +49,7 @@ biases = {
     'out': tf.Variable(tf.random_normal([FLAGS.n_classes]))
 }
 
-pred = bi_lstm().model(FLAGS, input_data, weights, biases)
+pred = bi_lstm().model(FLAGS, input_data, weights, biases, FLAGS.seq_length, FLAGS.embedding_dim)
 
 # Define loss and optimizer
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
@@ -87,7 +87,7 @@ with tf.Session() as sess:
     W = sess.run(embedding_init, feed_dict={embedding_placeholder: embedding})
 
     # init vocab processor
-    vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor(vocab_size)
+    vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor(FLAGS.seq_length)
     # fit the vocab from glove
     pretrain = vocab_processor.fit(vocab)
     # transform inputs
@@ -95,12 +95,34 @@ with tf.Session() as sess:
     # x_test = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_test))))
 
     curr_x_test_batch, curr_y_test_batch = sess.run([x_test, y_test])
+    curr_x_test_batch = decode_array(curr_x_test_batch)
     curr_x_test_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(curr_x_test_batch))))
+    curr_x_test_batch = sess.run([curr_x_test_batch])
+    temp_curr_y_test_batch = curr_y_test_batch
+    curr_y_test_batch = []
+    for label in temp_curr_y_test_batch:
+        if label == 1:
+            curr_y_test_batch.append([1, 0])
+        else:
+            curr_y_test_batch.append([0, 1])
+    del temp_curr_y_test_batch
+    curr_y_test_batch = np.array(curr_y_test_batch)
     tf.logging.info("step into train loop")
     while not coord.should_stop():
         curr_x_train_batch, curr_y_train_batch = sess.run([x_train_batch, y_train_batch])
+        curr_x_train_batch = decode_array(curr_x_train_batch)
         curr_x_train_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(curr_x_train_batch))))
-
+        curr_x_train_batch = sess.run([curr_x_train_batch])[0]
+        temp_curr_y_train_batch = curr_y_train_batch
+        curr_y_train_batch = []
+        for label in temp_curr_y_train_batch:
+            if label == 1:
+                curr_y_train_batch.append([1, 0])
+            else:
+                curr_y_train_batch.append([0, 1])
+        del temp_curr_y_train_batch
+        curr_y_train_batch = np.array(curr_y_train_batch)
+        tf.logging.info("start %s step optimizer" % step)
         sess.run(optimizer, feed_dict={
             input_data: curr_x_train_batch,
             y: curr_y_train_batch

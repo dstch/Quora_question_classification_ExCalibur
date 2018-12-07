@@ -7,7 +7,10 @@ class bi_lstm():
         self.n_hidden = 256
         self.num_step = 32
 
-    def model(self, FLAGS, input_data, weights, biases):
+    def model(self, FLAGS, input_data, weights, biases, n_steps, n_input):
+        # x = tf.transpose(input_data, [1, 0, 2])
+        # x = tf.reshape(x, [-1, n_input])
+        # x = tf.split(x, n_steps)
         # forward and backward direction cell , add dropout layer
         lstm_fw_cell = tf.nn.rnn_cell.BasicLSTMCell(FLAGS.n_hidden)
         lstm_fw_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_fw_cell, output_keep_prob=0.7)
@@ -18,4 +21,4 @@ class bi_lstm():
         # 双向LSTM，输出outputs为两个cell的output
         # 将两个cell的outputs进行拼接
         outputs = tf.concat(outputs, 2)
-        return tf.matmul(outputs[-1], weights['out']) + biases['out']
+        return tf.matmul(tf.transpose(outputs, [1, 0, 2])[-1], weights['out']) + biases['out']
