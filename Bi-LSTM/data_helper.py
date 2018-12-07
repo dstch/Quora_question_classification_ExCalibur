@@ -78,3 +78,13 @@ def read_from_tfrecords(tfrecord_dir, batch_size):  # , max_length, embedding_di
     # vector_batch = tf.reshape(vector, [batch_size, max_length, embedding_dim])
 
     return vector_batch, label_batch
+
+
+def decode_array(array):
+    decode_array = []
+    for line in array:
+        temp_line = []
+        for word in line:
+            temp_line.append(word.decode())
+        decode_array.append(' '.join(temp_line))
+    return np.array(decode_array)
