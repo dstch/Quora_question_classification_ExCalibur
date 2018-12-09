@@ -65,6 +65,39 @@ def embedding_sentence(input_file, save_path, max_length):
         writer.write(example.SerializeToString())
 
 
+def embedding_sentence_with_model(input_file, save_path, max_length, model_path):
+    """
+    get data set and save to tfrecord
+    :param data_dir:
+    :return:
+    """
+    # load glove model
+    model = gensim.models.KeyedVectors.load_word2vec_format(model_path)
+    lines = _read_csv(input_file)
+    split_lines = []
+    label_list = []
+    for line in lines:
+        split_lines.append(sentence_split(line[1], max_length))
+        label_list.append(int(line[2]))
+    del lines
+
+    writer = tf.python_io.TFRecordWriter(save_path)
+    for index, line in enumerate(split_lines):
+        bytes_words = []
+        for word in line:
+            if word in model:
+                bytes_words.append(model[word])
+            else:
+                bytes_words.append([0] * 300)
+        example = tf.train.Example(features=tf.train.Features(feature={
+            "label":
+                tf.train.Feature(int64_list=tf.train.Int64List(value=[label_list[index]])),
+            "features":
+                tf.train.Feature(float_list=tf.train.FloatList(value=bytes_words))
+        }))
+        writer.write(example.SerializeToString())
+
+
 def build_embedding_model(glove_file, gensim_file):
     with open(glove_file, 'r', encoding='utf-8') as f:
         num_lines = 0
@@ -99,12 +132,14 @@ if __name__ == '__main__':
     dev_input_file = '../train_data/dev.csv'
     embedding_dim = 300
     max_length = 15
-    dev_save_path = '../train_data/dev.tf_record'
+    dev_save_path = '../train_data/dev_embedding.tf_record'
     train_input_file = '../train_data/train.csv'
-    train_save_path = '../train_data/train.tf_record'
+    train_save_path = '../train_data/train_embbedding.tf_record'
     data_file = '../train_data/deal_train_data.csv'
     vocab_path = '../train_data/vocab.txt'
     # build_embedding_model(glove_file, gensim_file)
-    embedding_sentence(dev_input_file, dev_save_path, max_length)
-    embedding_sentence(train_input_file, train_save_path, max_length)
+    # embedding_sentence(dev_input_file, dev_save_path, max_length)
+    # embedding_sentence(train_input_file, train_save_path, max_length)
     # build_vocab(gensim_file, data_file, vocab_path)
+    embedding_sentence_with_model(dev_input_file, dev_save_path, max_length, gensim_file)
+    embedding_sentence_with_model(train_input_file, train_save_path, max_length, gensim_file)
