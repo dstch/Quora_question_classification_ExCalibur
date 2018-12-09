@@ -97,7 +97,7 @@ with tf.Session() as sess:
     curr_x_test_batch, curr_y_test_batch = sess.run([x_test, y_test])
     curr_x_test_batch = decode_array(curr_x_test_batch)
     curr_x_test_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(curr_x_test_batch))))
-    curr_x_test_batch = sess.run([curr_x_test_batch])
+    curr_x_test_batch = sess.run([curr_x_test_batch])[0]
     temp_curr_y_test_batch = curr_y_test_batch
     curr_y_test_batch = []
     for label in temp_curr_y_test_batch:
