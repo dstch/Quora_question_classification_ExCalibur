@@ -34,11 +34,9 @@ input_data = tf.placeholder(dtype=tf.float32, shape=[None, FLAGS.seq_length, FLA
 y = tf.placeholder("float", [None, FLAGS.n_classes])
 
 # get data batch
-# x_train_batch, y_train_batch = create_pipeline(FLAGS.train_data_path,
-#                                                FLAGS.batch_size, num_epochs=FLAGS.max_steps)
-# x_test, y_test = create_pipeline(FLAGS.test_data_path, FLAGS.batch_size)
-x_train_batch, y_train_batch = read_from_tfrecords(FLAGS.train_tfrecord_path, FLAGS.batch_size, FLAGS.seq_length)
-x_test, y_test = read_from_tfrecords(FLAGS.test_tfrecord_path, FLAGS.batch_size, FLAGS.seq_length)
+x_train_batch, y_train_batch = read_from_tfrecords(FLAGS.train_tfrecord_path, FLAGS.batch_size, FLAGS.seq_length,
+                                                   FLAGS.n_classes)
+x_test, y_test = read_from_tfrecords(FLAGS.test_tfrecord_path, FLAGS.batch_size, FLAGS.seq_length, FLAGS.n_classes)
 
 # Define weights
 weights = {
@@ -90,38 +88,21 @@ with tf.Session() as sess:
     vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor(FLAGS.seq_length)
     # fit the vocab from glove
     pretrain = vocab_processor.fit(vocab)
-    # transform inputs
-    # x_train_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_train_batch))))
-    # x_test = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(x_test))))
 
-    curr_x_test_batch, curr_y_test_batch = sess.run([x_test, y_test])
+
+    curr_x_test_batch, curr_y_test_batch = sess.run([x_test, y_test])  # shape(32,15)
     curr_x_test_batch = decode_array(curr_x_test_batch)
     curr_x_test_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(curr_x_test_batch))))
-    curr_x_test_batch = sess.run([curr_x_test_batch])[0]
-    temp_curr_y_test_batch = curr_y_test_batch
-    curr_y_test_batch = []
-    for label in temp_curr_y_test_batch:
-        if label == 1:
-            curr_y_test_batch.append([1, 0])
-        else:
-            curr_y_test_batch.append([0, 1])
-    del temp_curr_y_test_batch
-    curr_y_test_batch = np.array(curr_y_test_batch)
+    curr_x_test_batch = sess.run([curr_x_test_batch])[0]  # shape(32,15,300)
     tf.logging.info("step into train loop")
+
+    curr_x_train_batch, curr_y_train_batch = sess.run([x_train_batch, y_train_batch])
+    curr_x_train_batch = decode_array(curr_x_train_batch)
+    curr_x_train_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(curr_x_train_batch))))
+    curr_x_train_batch = sess.run([curr_x_train_batch])[0]
+
     while not coord.should_stop():
-        curr_x_train_batch, curr_y_train_batch = sess.run([x_train_batch, y_train_batch])
-        curr_x_train_batch = decode_array(curr_x_train_batch)
-        curr_x_train_batch = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(curr_x_train_batch))))
-        curr_x_train_batch = sess.run([curr_x_train_batch])[0]
-        temp_curr_y_train_batch = curr_y_train_batch
-        curr_y_train_batch = []
-        for label in temp_curr_y_train_batch:
-            if label == 1:
-                curr_y_train_batch.append([1, 0])
-            else:
-                curr_y_train_batch.append([0, 1])
-        del temp_curr_y_train_batch
-        curr_y_train_batch = np.array(curr_y_train_batch)
+
         tf.logging.info("start %s step optimizer" % step)
         sess.run(optimizer, feed_dict={
             input_data: curr_x_train_batch,
@@ -135,9 +116,9 @@ with tf.Session() as sess:
             tf.logging.info("Iter " + str(step) + ", Minibatch Loss= " + \
                             "{:.6f}".format(loss) + ", Training Accuracy= " + \
                             "{:.5f}".format(acc))
-            tf.logging.info("Step:%d ,Testing Accuracy:" % step,
-                            sess.run(accuracy, feed_dict={input_data: curr_x_test_batch, y: curr_y_test_batch}))
-            saver.save(sess, FLAGS.checkpoint_path, global_step=step)
+            print("Step:%s ,Testing Accuracy:" % step,
+                  sess.run(accuracy, feed_dict={input_data: curr_x_test_batch, y: curr_y_test_batch}))
+            saver.save(sess, FLAGS.checkpoint_path + '/model-%s' % step, global_step=step)
         step += 1
 
     tf.logging.info("Optimization Finished!")
