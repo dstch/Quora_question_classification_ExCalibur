@@ -86,9 +86,9 @@ def embedding_sentence_with_model(input_file, save_path, max_length, model_path)
         bytes_words = []
         for word in line:
             if word in model:
-                bytes_words.append(model[word])
+                bytes_words.extend(model[word])
             else:
-                bytes_words.append([0] * 300)
+                bytes_words.extend([0] * 300)
         example = tf.train.Example(features=tf.train.Features(feature={
             "label":
                 tf.train.Feature(int64_list=tf.train.Int64List(value=[label_list[index]])),

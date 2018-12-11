@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-import csv
+import csv, string
 
 
 def _read_csv(input_file, max_length):
@@ -14,7 +14,7 @@ def _read_csv(input_file, max_length):
         text_lines = []
         # label_lines = []
         for line in reader:
-            text_lines.append(sentence_split(line[1], max_length))
+            text_lines.append(' '.join(sentence_split(line[1], max_length)))
             # label_lines.append(int(line[2]))
         return text_lines[1:]  # remove header
 
@@ -130,9 +130,10 @@ def decode_array(array):
 
 def embedding_raw_text(csv_path, max_length, W, vocab_processor, batch_size, n_classes):
     lines = _read_csv(csv_path, max_length)
-    text = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(lines))))
-    _, label = read_data(csv_path)
-
+    text = tf.nn.embedding_lookup(W, np.array(list(vocab_processor.transform(np.array(lines)))))
+    file_queue = tf.train.string_input_producer([csv_path], num_epochs=None)
+    _, label = read_data(file_queue)
+    label = tf.reshape(label, (1,))
     vector_batch, label_batch = tf.train.batch([text, label], batch_size=batch_size, num_threads=4, capacity=32)
 
     # deal with label batch, change int label to one-hot code
