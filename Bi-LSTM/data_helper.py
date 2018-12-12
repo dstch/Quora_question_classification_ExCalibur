@@ -87,7 +87,7 @@ def create_pipeline(filename, batch_size, num_epochs=None):
     return example_batch, label_batch
 
 
-def read_from_tfrecords(tfrecord_dir, batch_size, max_length, n_classes):  # , max_length, embedding_dim
+def read_from_tfrecords(tfrecord_dir, batch_size, max_length, n_classes, epochs):  # , max_length, embedding_dim
     """
     read data from tf_records
     TensorFlow基础5：TFRecords文件的存储与读取讲解及代码实现
@@ -95,20 +95,20 @@ def read_from_tfrecords(tfrecord_dir, batch_size, max_length, n_classes):  # , m
     :return:
     """
     # build file queue
-    file_queue = tf.train.string_input_producer([tfrecord_dir])
+    file_queue = tf.train.string_input_producer([tfrecord_dir], num_epochs=epochs)
     # build reader
     reader = tf.TFRecordReader()
-    key, value = reader.read(file_queue)
+    _, value = reader.read(file_queue)
 
     features = tf.parse_single_example(value, features={
-        "features": tf.FixedLenFeature([max_length], tf.string),
+        "features": tf.FixedLenFeature([max_length], tf.int64),
         "label": tf.FixedLenFeature([1], tf.int64)
     })
 
     label = tf.cast(features["label"], tf.int32)  # tf.cast(features["label"], tf.string)
     vector = features["features"]
 
-    vector_batch, label_batch = tf.train.batch([vector, label], batch_size=batch_size, num_threads=4, capacity=32)
+    vector_batch, label_batch = tf.train.batch([vector, label], batch_size=batch_size, num_threads=4, capacity=256)
 
     # deal with label batch, change int label to one-hot code
     indices = tf.expand_dims(tf.range(0, batch_size, 1), 1)
