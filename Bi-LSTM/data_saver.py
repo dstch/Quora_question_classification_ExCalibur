@@ -1,6 +1,8 @@
 import csv, string
 import tensorflow as tf
 import gensim
+import numpy as np
+from data_helper import loadGloVe
 
 
 def _read_csv(input_file):
@@ -98,6 +100,32 @@ def embedding_sentence_with_model(input_file, save_path, max_length, model_path)
         writer.write(example.SerializeToString())
 
 
+def save_word_ids(save_path, csv_path, glove_path, embedding_dim, seq_length):
+    vocab, embd = loadGloVe(glove_path, embedding_dim)
+    # init vocab processor
+    vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor(seq_length)
+    # fit the vocab from glove
+    pretrain = vocab_processor.fit(vocab)
+    lines = _read_csv(csv_path)
+    split_lines = []
+    label_list = []
+    for line in lines:
+        split_lines.append(' '.join(sentence_split(line[1], max_length)))
+        label_list.append(int(line[2]))
+    word_ids = list(vocab_processor.transform(np.array(split_lines)))
+
+    writer = tf.python_io.TFRecordWriter(save_path)
+    for index, line in enumerate(word_ids):
+        example = tf.train.Example(features=tf.train.Features(feature={
+            "label":
+                tf.train.Feature(int64_list=tf.train.Int64List(value=[label_list[index]])),
+            "features":
+                tf.train.Feature(int64_list=tf.train.Int64List(value=line))
+        }))
+        writer.write(example.SerializeToString())
+    writer.close()
+
+
 def build_embedding_model(glove_file, gensim_file):
     with open(glove_file, 'r', encoding='utf-8') as f:
         num_lines = 0
@@ -132,14 +160,18 @@ if __name__ == '__main__':
     dev_input_file = '../train_data/dev.csv'
     embedding_dim = 300
     max_length = 15
-    dev_save_path = '../train_data/dev_embedding.tf_record'
+    dev_save_path = '../train_data/dev.tf_record'
     train_input_file = '../train_data/train.csv'
-    train_save_path = '../train_data/train_embbedding.tf_record'
+    train_save_path = '../train_data/train.tf_record'
     data_file = '../train_data/deal_train_data.csv'
     vocab_path = '../train_data/vocab.txt'
+    dev_word_id_save_path = '../train_data/dev_word_id.tf_record'
+    train_word_id_save_path = '../train_data/train_word_id.tf_record'
     # build_embedding_model(glove_file, gensim_file)
     # embedding_sentence(dev_input_file, dev_save_path, max_length)
     # embedding_sentence(train_input_file, train_save_path, max_length)
     # build_vocab(gensim_file, data_file, vocab_path)
-    embedding_sentence_with_model(dev_input_file, dev_save_path, max_length, gensim_file)
-    embedding_sentence_with_model(train_input_file, train_save_path, max_length, gensim_file)
+    # embedding_sentence_with_model(dev_input_file, dev_save_path, max_length, gensim_file)
+    # embedding_sentence_with_model(train_input_file, train_save_path, max_length, gensim_file)
+    save_word_ids(dev_word_id_save_path, dev_input_file, vocab_path, embedding_dim, max_length)
+    save_word_ids(train_word_id_save_path, train_input_file, vocab_path, embedding_dim, max_length)
