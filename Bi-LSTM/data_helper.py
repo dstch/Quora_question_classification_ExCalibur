@@ -142,3 +142,14 @@ def embedding_raw_text(csv_path, max_length, W, vocab_processor, batch_size, n_c
     onehot_labels = tf.sparse_to_dense(concated, tf.stack([batch_size, n_classes]), 1.0, 0.0)
 
     return vector_batch, onehot_labels
+
+
+def f_test(predicted, actual):
+    TP = tf.count_nonzero(predicted * actual)
+    # TN = tf.count_nonzero((predicted - 1) * (actual - 1))
+    FP = tf.count_nonzero(predicted * (actual - 1))
+    FN = tf.count_nonzero((predicted - 1) * actual)
+    tf_precision = TP / (TP + FP)
+    tf_recall = TP / (TP + FN)
+    tf_f1_score = 2 * tf_precision * tf_recall / (tf_precision + tf_recall)
+    return tf_precision, tf_recall, tf_f1_score

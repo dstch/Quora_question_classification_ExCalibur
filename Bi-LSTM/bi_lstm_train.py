@@ -10,15 +10,15 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string("train_data_path", "../train_data/train.csv", "train data path")
 flags.DEFINE_string("test_data_path", "../train_data/dev.csv", "test data path")
-flags.DEFINE_string("train_tfrecord_path", "../train_data/train.tf_record", "train data path")
-flags.DEFINE_string("test_tfrecord_path", "../train_data/dev.tf_record", "test data path")
+flags.DEFINE_string("train_tfrecord_path", "../train_data/train_word_id.tf_record", "train data path")
+flags.DEFINE_string("test_tfrecord_path", "../train_data/dev_word_id.tf_record", "test data path")
 flags.DEFINE_integer("n_hidden", 128, "LSTM hidden layer num of features")
 flags.DEFINE_integer("num_step", 16, "input data timesteps")
 flags.DEFINE_integer("n_classes", 2, "number of classes")
 flags.DEFINE_float("learning_rate", 0.01, "learnning rate")
 flags.DEFINE_integer("batch_size", 32, "batch size")
 flags.DEFINE_integer("max_steps", 4000, "max step,stop condition")
-flags.DEFINE_integer("display_step", 50, "save model steps")
+flags.DEFINE_integer("display_step", 1000, "save model steps")
 flags.DEFINE_string("train_writer_path", "./logs/train", "train tensorboard save path")
 flags.DEFINE_string("test_writer_path", "./logs/train", "test tensorboard save path")
 flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
@@ -47,7 +47,7 @@ biases = {
     'out': tf.Variable(tf.random_normal([FLAGS.n_classes]))
 }
 
-pred = bi_lstm().model(FLAGS.n_classes, input_data, weights, biases)
+pred = bi_lstm().model(FLAGS.n_hidden, input_data, weights, biases)
 
 # Define loss and optimizer
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
@@ -92,7 +92,7 @@ with tf.Session() as sess:
     try:
         while not coord.should_stop():
             curr_x_train_batch, curr_y_train_batch = sess.run([x_train_batch, y_train_batch])
-            tf.logging.info("start %s step optimizer" % step)
+            # tf.logging.info("start %s step optimizer" % step)
             sess.run(optimizer, feed_dict={
                 input_data: curr_x_train_batch,
                 y: curr_y_train_batch
