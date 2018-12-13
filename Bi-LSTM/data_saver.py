@@ -100,7 +100,7 @@ def embedding_sentence_with_model(input_file, save_path, max_length, model_path)
         writer.write(example.SerializeToString())
 
 
-def save_word_ids(save_path, csv_path, glove_path, embedding_dim, seq_length):
+def save_word_ids(save_path, csv_path, glove_path, embedding_dim, seq_length, mode='train'):
     vocab, embd = loadGloVe(glove_path, embedding_dim)
     # init vocab processor
     vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor(seq_length)
@@ -109,20 +109,40 @@ def save_word_ids(save_path, csv_path, glove_path, embedding_dim, seq_length):
     lines = _read_csv(csv_path)
     split_lines = []
     label_list = []
-    for line in lines:
-        split_lines.append(' '.join(sentence_split(line[1], max_length)))
-        label_list.append(int(line[2]))
+    qid_list = []
+    if mode == 'test':
+        for line in lines:
+            split_lines.append(' '.join(sentence_split(line[1], max_length)))
+            qid_list.append(int(line[0]))
+    else:
+        for line in lines:
+            split_lines.append(' '.join(sentence_split(line[1], max_length)))
+            label_list.append(int(line[2]))
+            qid_list.append(int(line[0]))
     word_ids = list(vocab_processor.transform(np.array(split_lines)))
 
     writer = tf.python_io.TFRecordWriter(save_path)
-    for index, line in enumerate(word_ids):
-        example = tf.train.Example(features=tf.train.Features(feature={
-            "label":
-                tf.train.Feature(int64_list=tf.train.Int64List(value=[label_list[index]])),
-            "features":
-                tf.train.Feature(int64_list=tf.train.Int64List(value=line))
-        }))
-        writer.write(example.SerializeToString())
+
+    if mode == 'test':
+        for index, line in enumerate(word_ids):
+            example = tf.train.Example(features=tf.train.Features(feature={
+                "qid":
+                    tf.train.Feature(int64_list=tf.train.Int64List(value=[qid_list[index]])),
+                "features":
+                    tf.train.Feature(int64_list=tf.train.Int64List(value=line))
+            }))
+            writer.write(example.SerializeToString())
+    else:
+        for index, line in enumerate(word_ids):
+            example = tf.train.Example(features=tf.train.Features(feature={
+                "qid":
+                    tf.train.Feature(int64_list=tf.train.Int64List(value=[qid_list[index]])),
+                "label":
+                    tf.train.Feature(int64_list=tf.train.Int64List(value=[label_list[index]])),
+                "features":
+                    tf.train.Feature(int64_list=tf.train.Int64List(value=line))
+            }))
+            writer.write(example.SerializeToString())
     writer.close()
 
 

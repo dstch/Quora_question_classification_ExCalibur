@@ -87,7 +87,8 @@ def create_pipeline(filename, batch_size, num_epochs=None):
     return example_batch, label_batch
 
 
-def read_from_tfrecords(tfrecord_dir, batch_size, max_length, n_classes, epochs):  # , max_length, embedding_dim
+def read_from_tfrecords(tfrecord_dir, batch_size, max_length, n_classes, epochs,
+                        mode='train'):  # , max_length, embedding_dim
     """
     read data from tf_records
     TensorFlow基础5：TFRecords文件的存储与读取讲解及代码实现
@@ -99,23 +100,33 @@ def read_from_tfrecords(tfrecord_dir, batch_size, max_length, n_classes, epochs)
     # build reader
     reader = tf.TFRecordReader()
     _, value = reader.read(file_queue)
+    if mode == 'test':
+        features = tf.parse_single_example(value, features={
+            "qid": tf.FixedLenFeature([1], tf.int64),
+            "features": tf.FixedLenFeature([max_length], tf.int64)
+        })
+        qid = tf.cast(features["qid"], tf.int32)
+        vector = features["features"]
+        vector_batch, qid_batch = tf.train.batch([vector, qid], batch_size=batch_size, num_threads=4, capacity=256)
+        return vector_batch, qid_batch
+    else:
+        features = tf.parse_single_example(value, features={
+            "qid": tf.FixedLenFeature([1], tf.int64),
+            "features": tf.FixedLenFeature([max_length], tf.int64),
+            "label": tf.FixedLenFeature([1], tf.int64)
+        })
 
-    features = tf.parse_single_example(value, features={
-        "features": tf.FixedLenFeature([max_length], tf.int64),
-        "label": tf.FixedLenFeature([1], tf.int64)
-    })
+        label = tf.cast(features["label"], tf.int32)  # tf.cast(features["label"], tf.string)
+        vector = features["features"]
 
-    label = tf.cast(features["label"], tf.int32)  # tf.cast(features["label"], tf.string)
-    vector = features["features"]
+        vector_batch, label_batch = tf.train.batch([vector, label], batch_size=batch_size, num_threads=4, capacity=256)
 
-    vector_batch, label_batch = tf.train.batch([vector, label], batch_size=batch_size, num_threads=4, capacity=256)
+        # deal with label batch, change int label to one-hot code
+        indices = tf.expand_dims(tf.range(0, batch_size, 1), 1)
+        concated = tf.concat([indices, label_batch], 1)
+        onehot_labels = tf.sparse_to_dense(concated, tf.stack([batch_size, n_classes]), 1.0, 0.0)
 
-    # deal with label batch, change int label to one-hot code
-    indices = tf.expand_dims(tf.range(0, batch_size, 1), 1)
-    concated = tf.concat([indices, label_batch], 1)
-    onehot_labels = tf.sparse_to_dense(concated, tf.stack([batch_size, n_classes]), 1.0, 0.0)
-
-    return vector_batch, onehot_labels
+        return vector_batch, onehot_labels
 
 
 def decode_array(array):
