@@ -1,6 +1,7 @@
 import tensorflow as tf
 from bi_lstm_model import bi_lstm
-from data_helper import read_from_tfrecords, loadGloVe, build_embedding_layer, decode_array, embedding_raw_text
+from data_helper import read_from_tfrecords, loadGloVe, build_embedding_layer, calculate_evaluate_value
+from sklearn import metrics
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -54,6 +55,7 @@ cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, label
 optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate).minimize(cost)
 
 # Evaluate model
+y_pred_cls = tf.argmax(tf.nn.softmax(pred), 1)
 correct_pred = tf.equal(tf.argmax(pred, 1), tf.argmax(y, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 
@@ -70,7 +72,7 @@ tf.logging.info('Start Training...')
 saver = tf.train.Saver()
 
 with tf.Session() as sess:
-    # train_writer = tf.summary.FileWriter(FLAGS.train_writer_path, sess.graph)
+    train_writer = tf.summary.FileWriter(FLAGS.train_writer_path, sess.graph)
     # test_writer = tf.summary.FileWriter(FLAGS.test_writer_path, sess.graph)
 
     sess.run(init)
@@ -82,7 +84,7 @@ with tf.Session() as sess:
     vocab, embd = loadGloVe(FLAGS.glove_path, FLAGS.embedding_dim)
     embedding_init, embedding, W, embedding_placeholder, vocab_size = build_embedding_layer(vocab, embd)
     W = sess.run(embedding_init, feed_dict={embedding_placeholder: embedding})
-
+    # embedding text
     x_train_batch = tf.nn.embedding_lookup(W, x_train_batch)
     x_test = tf.nn.embedding_lookup(W, x_test)
 
@@ -108,7 +110,33 @@ with tf.Session() as sess:
                                 "{:.5f}".format(acc))
                 print("Step:%s ,Testing Accuracy:" % step,
                       sess.run(accuracy, feed_dict={input_data: curr_x_test_batch, y: curr_y_test_batch}))
+                # save model
                 saver.save(sess, FLAGS.checkpoint_path + '/model-%s' % step, global_step=step)
+                # get prediction value
+                pre = sess.run(y_pred_cls, feed_dict={input_data: curr_x_train_batch, y: curr_y_train_batch})
+                # get real value
+                y_true = curr_y_train_batch[:, 1]
+                # calculate evaluate value
+                tf_p, tf_r, tf_f1 = sess.run(calculate_evaluate_value(pre, y_true))
+                print("prediction:%s   recall:%s   f1_score:%s" % (tf_p, tf_r, tf_f1))
+
+                # evaluate by sklearn
+                # 评估
+                print("Precision, Recall and F1-Score...")
+                print(metrics.classification_report(y_true, pre, target_names=['无意义', '有意义']))
+
+                # 混淆矩阵
+                print("Confusion Matrix...")
+                cm = metrics.confusion_matrix(y_true, pre)
+                print(cm)
+
+                with tf.name_scope('Evaluation'):
+                    tf.summary.scalar('prediction', tf_p)
+                    tf.summary.scalar('recall', tf_r)
+                    tf.summary.scalar('f1_score', tf_f1)
+                summary_str = sess.run(merged_summary)
+                train_writer = tf.summary.FileWriter(FLAGS.train_writer_path, sess.graph)
+                train_writer.add_summary(summary_str, step)
             step += 1
     except tf.errors.OutOfRangeError:
         print('Done training -- epoch limit reached')

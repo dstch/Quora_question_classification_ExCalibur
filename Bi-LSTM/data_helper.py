@@ -144,7 +144,7 @@ def embedding_raw_text(csv_path, max_length, W, vocab_processor, batch_size, n_c
     return vector_batch, onehot_labels
 
 
-def f_test(predicted, actual):
+def calculate_evaluate_value(predicted, actual):
     TP = tf.count_nonzero(predicted * actual)
     # TN = tf.count_nonzero((predicted - 1) * (actual - 1))
     FP = tf.count_nonzero(predicted * (actual - 1))
