@@ -10,9 +10,9 @@ flags = tf.flags
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string("train_data_path", "../train_data/train.csv", "train data path")
-flags.DEFINE_string("test_data_path", "../train_data/dev.csv", "test data path")
+flags.DEFINE_string("dev_data_path", "../train_data/dev.csv", "dev data path")
 flags.DEFINE_string("train_tfrecord_path", "../train_data/train_word_id.tf_record", "train data path")
-flags.DEFINE_string("test_tfrecord_path", "../train_data/dev_word_id.tf_record", "test data path")
+flags.DEFINE_string("dev_tfrecord_path", "../train_data/dev_word_id.tf_record", "dev data path")
 flags.DEFINE_integer("n_hidden", 128, "LSTM hidden layer num of features")
 flags.DEFINE_integer("num_step", 16, "input data timesteps")
 flags.DEFINE_integer("n_classes", 2, "number of classes")
@@ -21,7 +21,7 @@ flags.DEFINE_integer("batch_size", 32, "batch size")
 flags.DEFINE_integer("max_steps", 4000, "max step,stop condition")
 flags.DEFINE_integer("display_step", 1000, "save model steps")
 flags.DEFINE_string("train_writer_path", "./logs/train", "train tensorboard save path")
-flags.DEFINE_string("test_writer_path", "./logs/train", "test tensorboard save path")
+flags.DEFINE_string("dev_writer_path", "./logs/train", "dev tensorboard save path")
 flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
 # flags.DEFINE_string("glove_path", "./glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
 flags.DEFINE_string("glove_path", "../train_data/vocab.txt", "pre-train embedding model path")
@@ -36,7 +36,7 @@ y = tf.placeholder("float", [None, FLAGS.n_classes])
 # get data batch
 x_train_batch, y_train_batch = read_from_tfrecords(FLAGS.train_tfrecord_path, FLAGS.batch_size, FLAGS.seq_length,
                                                    FLAGS.n_classes, 2)
-x_test, y_test = read_from_tfrecords(FLAGS.test_tfrecord_path, FLAGS.batch_size, FLAGS.seq_length,
+x_test, y_test = read_from_tfrecords(FLAGS.dev_tfrecord_path, FLAGS.batch_size, FLAGS.seq_length,
                                      FLAGS.n_classes, 2)
 
 # Define weights
@@ -73,7 +73,7 @@ saver = tf.train.Saver()
 
 with tf.Session() as sess:
     train_writer = tf.summary.FileWriter(FLAGS.train_writer_path, sess.graph)
-    # test_writer = tf.summary.FileWriter(FLAGS.test_writer_path, sess.graph)
+    # dev_writer = tf.summary.FileWriter(FLAGS.dev_writer_path, sess.graph)
 
     sess.run(init)
     sess.run(tf.local_variables_initializer())
