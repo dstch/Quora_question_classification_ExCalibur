@@ -11,8 +11,10 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string("train_data_path", "../train_data/train.csv", "train data path")
 flags.DEFINE_string("dev_data_path", "../train_data/dev.csv", "dev data path")
+flags.DEFINE_string("test_data_path", "../train_data/test.csv", "test data path")
 flags.DEFINE_string("train_tfrecord_path", "../train_data/train_word_id.tf_record", "train data path")
 flags.DEFINE_string("dev_tfrecord_path", "../train_data/dev_word_id.tf_record", "dev data path")
+flags.DEFINE_string("test_tfrecord_path", "../train_data/test_word_id.tf_record", "test data path")
 flags.DEFINE_integer("n_hidden", 128, "LSTM hidden layer num of features")
 flags.DEFINE_integer("num_step", 16, "input data timesteps")
 flags.DEFINE_integer("n_classes", 2, "number of classes")
@@ -144,3 +146,8 @@ with tf.Session() as sess:
         tf.logging.info("Optimization Finished!")
         coord.request_stop()
     coord.join(threads)
+    # begin get test result
+    coord = tf.train.Coordinator()
+    threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+    result_list=[]
+

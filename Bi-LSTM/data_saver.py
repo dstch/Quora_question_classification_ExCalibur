@@ -112,13 +112,13 @@ def save_word_ids(save_path, csv_path, glove_path, embedding_dim, seq_length, mo
     qid_list = []
     if mode == 'test':
         for line in lines:
-            split_lines.append(' '.join(sentence_split(line[1], max_length)))
-            qid_list.append(int(line[0]))
+            split_lines.append(' '.join(sentence_split(line[1], seq_length)))
+            qid_list.append(str.encode(line[0]))
     else:
         for line in lines:
-            split_lines.append(' '.join(sentence_split(line[1], max_length)))
+            split_lines.append(' '.join(sentence_split(line[1], seq_length)))
             label_list.append(int(line[2]))
-            qid_list.append(int(line[0]))
+            qid_list.append(str.encode(line[0]))
     word_ids = list(vocab_processor.transform(np.array(split_lines)))
 
     writer = tf.python_io.TFRecordWriter(save_path)
@@ -127,7 +127,7 @@ def save_word_ids(save_path, csv_path, glove_path, embedding_dim, seq_length, mo
         for index, line in enumerate(word_ids):
             example = tf.train.Example(features=tf.train.Features(feature={
                 "qid":
-                    tf.train.Feature(int64_list=tf.train.Int64List(value=[qid_list[index]])),
+                    tf.train.Feature(bytes_list=tf.train.BytesList(value=[qid_list[index]])),
                 "features":
                     tf.train.Feature(int64_list=tf.train.Int64List(value=line))
             }))
@@ -136,7 +136,7 @@ def save_word_ids(save_path, csv_path, glove_path, embedding_dim, seq_length, mo
         for index, line in enumerate(word_ids):
             example = tf.train.Example(features=tf.train.Features(feature={
                 "qid":
-                    tf.train.Feature(int64_list=tf.train.Int64List(value=[qid_list[index]])),
+                    tf.train.Feature(bytes_list=tf.train.BytesList(value=[qid_list[index]])),
                 "label":
                     tf.train.Feature(int64_list=tf.train.Int64List(value=[label_list[index]])),
                 "features":

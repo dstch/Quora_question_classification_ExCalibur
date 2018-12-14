@@ -102,16 +102,16 @@ def read_from_tfrecords(tfrecord_dir, batch_size, max_length, n_classes, epochs,
     _, value = reader.read(file_queue)
     if mode == 'test':
         features = tf.parse_single_example(value, features={
-            "qid": tf.FixedLenFeature([1], tf.int64),
+            "qid": tf.FixedLenFeature([1], tf.string),
             "features": tf.FixedLenFeature([max_length], tf.int64)
         })
-        qid = tf.cast(features["qid"], tf.int32)
+        qid =features["qid"]
         vector = features["features"]
         vector_batch, qid_batch = tf.train.batch([vector, qid], batch_size=batch_size, num_threads=4, capacity=256)
         return vector_batch, qid_batch
     else:
         features = tf.parse_single_example(value, features={
-            "qid": tf.FixedLenFeature([1], tf.int64),
+            "qid": tf.FixedLenFeature([1], tf.string),
             "features": tf.FixedLenFeature([max_length], tf.int64),
             "label": tf.FixedLenFeature([1], tf.int64)
         })
