@@ -1,9 +1,9 @@
 import tensorflow as tf
 import os
-from .data_saver import save_word_ids
-from .data_helper import read_from_tfrecords
+from data_saver import save_word_ids
+from data_helper import read_from_tfrecords
 import csv
-from .bi_lstm_model import bi_lstm
+from bi_lstm_model import bi_lstm
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
