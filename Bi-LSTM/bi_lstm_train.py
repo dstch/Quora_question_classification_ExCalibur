@@ -20,8 +20,9 @@ flags.DEFINE_float("learning_rate", 0.01, "learnning rate")
 flags.DEFINE_integer("batch_size", 32, "batch size")
 flags.DEFINE_integer("max_steps", 4000, "max step,stop condition")
 flags.DEFINE_integer("display_step", 1000, "save model steps")
+flags.DEFINE_integer("every_step", 50, "every evaluate steps")
 flags.DEFINE_string("train_writer_path", "./logs/train", "train tensorboard save path")
-flags.DEFINE_string("dev_writer_path", "./logs/train", "dev tensorboard save path")
+flags.DEFINE_string("dev_writer_path", "./logs/test", "dev tensorboard save path")
 flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
 # flags.DEFINE_string("glove_path", "./glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
 flags.DEFINE_string("glove_path", "../train_data/vocab.txt", "pre-train embedding model path")
@@ -65,7 +66,7 @@ tf.summary.scalar('accuracy', accuracy)
 merged_summary = tf.summary.merge_all()
 
 # Initializing the variables
-init = tf.initialize_all_variables()  # tf.global_variables_initializer()
+init = tf.group(tf.initialize_all_variables(), tf.local_variables_initializer())  # tf.global_variables_initializer()
 
 tf.logging.info('Start Training...')
 
@@ -73,10 +74,9 @@ saver = tf.train.Saver()
 
 with tf.Session() as sess:
     train_writer = tf.summary.FileWriter(FLAGS.train_writer_path, sess.graph)
-    # dev_writer = tf.summary.FileWriter(FLAGS.dev_writer_path, sess.graph)
+    dev_writer = tf.summary.FileWriter(FLAGS.dev_writer_path, sess.graph)
 
     sess.run(init)
-    sess.run(tf.local_variables_initializer())
 
     step = 1
     tf.logging.info("into embedding layer")
@@ -99,23 +99,25 @@ with tf.Session() as sess:
                 input_data: curr_x_train_batch,
                 y: curr_y_train_batch
             })
-            if step % FLAGS.display_step == 0:
-                curr_x_test_batch, curr_y_test_batch = sess.run([x_test, y_test])  # shape(32,15)
-                # Calculate batch accuracy
-                acc = sess.run(accuracy, feed_dict={input_data: curr_x_train_batch, y: curr_y_train_batch})
-                # Calculate batch loss
-                loss = sess.run(cost, feed_dict={input_data: curr_x_train_batch, y: curr_y_train_batch})
+            if step % FLAGS.every_step == 0:
+                # Calculate batch accuracy and loss
+                acc, loss, summary = sess.run([accuracy, cost, merged_summary],
+                                              feed_dict={input_data: curr_x_train_batch, y: curr_y_train_batch})
+
                 tf.logging.info("Iter " + str(step) + ", Minibatch Loss= " + \
                                 "{:.6f}".format(loss) + ", Training Accuracy= " + \
                                 "{:.5f}".format(acc))
-                print("Step:%s ,Testing Accuracy:" % step,
-                      sess.run(accuracy, feed_dict={input_data: curr_x_test_batch, y: curr_y_test_batch}))
+                train_writer.add_summary(summary, step)
+            if step % FLAGS.display_step == 0 or coord.should_stop():
+                curr_x_test_batch, curr_y_test_batch = sess.run([x_test, y_test])  # shape(32,15)
+                # Calculate test batch accuracy and prediction value
+                test_acc, pre, test_summary = sess.run([accuracy, y_pred_cls, merged_summary],
+                                                       feed_dict={input_data: curr_x_test_batch, y: curr_y_test_batch})
+                print("Step:%s ,Testing Accuracy:" % step, test_acc)
                 # save model
                 saver.save(sess, FLAGS.checkpoint_path + '/model-%s' % step, global_step=step)
-                # get prediction value
-                pre = sess.run(y_pred_cls, feed_dict={input_data: curr_x_train_batch, y: curr_y_train_batch})
                 # get real value
-                y_true = curr_y_train_batch[:, 1]
+                y_true = curr_y_test_batch[:, 1]
                 # calculate evaluate value
                 tf_p, tf_r, tf_f1 = sess.run(calculate_evaluate_value(pre, y_true))
                 print("prediction:%s   recall:%s   f1_score:%s" % (tf_p, tf_r, tf_f1))
@@ -134,9 +136,8 @@ with tf.Session() as sess:
                     tf.summary.scalar('prediction', tf_p)
                     tf.summary.scalar('recall', tf_r)
                     tf.summary.scalar('f1_score', tf_f1)
-                summary_str = sess.run(merged_summary)
-                train_writer = tf.summary.FileWriter(FLAGS.train_writer_path, sess.graph)
-                train_writer.add_summary(summary_str, step)
+                dev_writer.add_summary(test_summary, step)
+
             step += 1
     except tf.errors.OutOfRangeError:
         print('Done training -- epoch limit reached')
