@@ -86,7 +86,7 @@ with tf.Graph().as_default():
         for index, qid in enumerate(save_qid_list):
             qid_str = qid[0].decode()
             save_data_list.append([qid_str, save_target_list[index]])
-        with open(FLAGS.submit_file, 'w+') as f:
+        with open(FLAGS.submit_file, 'w') as f:
             f_csv = csv.writer(f)
             f_csv.writerow(headers)
             f_csv.writerows(save_data_list)
