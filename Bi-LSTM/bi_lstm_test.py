@@ -1,7 +1,7 @@
 import tensorflow as tf
 import os
 from data_saver import save_word_ids
-from data_helper import read_from_tfrecords
+from data_helper import read_from_tfrecords, loadGloVe, build_embedding_layer
 import csv
 from bi_lstm_model import bi_lstm
 
@@ -49,13 +49,21 @@ with tf.Graph().as_default():
     saver = tf.train.Saver()
     with tf.Session() as sess:
         # sess.run(tf.initialize_all_variables())
-        # sess.run(tf.local_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+
+        # embedding layer
+        vocab, embd = loadGloVe(FLAGS.glove_path, FLAGS.embedding_dim)
+        embedding_init, embedding, W, embedding_placeholder, vocab_size = build_embedding_layer(vocab, embd)
+        W = sess.run(embedding_init, feed_dict={embedding_placeholder: embedding})
+        # embedding text
+        test_text_batch = tf.nn.embedding_lookup(W, test_text_batch, name='train_text_embedding')
 
         ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_path)
         if ckpt and ckpt.model_checkpoint_path:
             saver.restore(sess, ckpt.model_checkpoint_path)  # 载入参数，参数保存在两个文件中，不过restore会自己寻找
         else:
             tf.logging.ERROR("Load model failed, can't find model")
+            raise FileNotFoundError
         # graph = tf.get_default_graph()
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
@@ -65,8 +73,8 @@ with tf.Graph().as_default():
             while not coord.should_stop():
                 test_batch_value, qid = sess.run([test_text_batch, test_qid_batch])
                 pred_value = sess.run(logit, feed_dict={input_data: test_batch_value})
-                save_qid_list.append(qid)
-                save_target_list.append(pred_value)
+                save_qid_list.extend(qid)
+                save_target_list.extend(pred_value)
         except tf.errors.OutOfRangeError:
             print("Done testing -- epoch limit reached")
         finally:
@@ -74,7 +82,11 @@ with tf.Graph().as_default():
         coord.join(threads)
         # write result to csv
         headers = ['qid', 'target']
+        save_data_list = []
+        for index, qid in enumerate(save_qid_list):
+            qid_str = qid[0].decode()
+            save_data_list.append([qid_str, save_target_list[index]])
         with open(FLAGS.submit_file, 'w+') as f:
             f_csv = csv.writer(f)
             f_csv.writerow(headers)
-            f_csv.writerows(rows)
+            f_csv.writerows(save_data_list)
