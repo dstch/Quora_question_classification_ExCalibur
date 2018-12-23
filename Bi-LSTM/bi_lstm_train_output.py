@@ -12,6 +12,7 @@ tf.logging.set_verbosity(tf.logging.INFO)
 flags = tf.flags
 FLAGS = flags.FLAGS
 
+flags.DEFINE_string("raw_train_data_path", "../raw_data/train.csv", "train data path")
 flags.DEFINE_string("train_data_path", "../train_data/train.csv", "train data path")
 flags.DEFINE_string("dev_data_path", "../train_data/dev.csv", "dev data path")
 flags.DEFINE_string("test_data_path", "../train_data/test.csv", "test data path")
@@ -34,9 +35,9 @@ flags.DEFINE_integer("embedding_dim", 300, "word embedding dim")
 flags.DEFINE_integer("seq_length", 15, "sentence max length")
 
 
-def re_build_data():
+def re_build_data(embedding_dict):
     # re-build data file
-    train_data = pd.read_csv(FLAGS.raw_train_data_path)
+    train_data = pd.read_csv(FLAGS.train_data_path)
     target_0_data = train_data.loc[train_data.target == 0, :]
     target_1_data = train_data.loc[train_data.target == 1, :]
     # view different target count
@@ -45,18 +46,18 @@ def re_build_data():
     target_0_data = target_0_data.sample(frac=1.0)
     target_1_data = target_1_data.sample(frac=1.0)
     # 切分数据集
-    target_0_train, target_0_test = target_0_data.iloc[:80000], target_0_data.iloc[80000:]
-    target_1_train, target_1_test = target_1_data.iloc[:80000], target_1_data.iloc[80000:]
+    target_0_train, target_0_test = target_0_data.iloc[:8000], target_0_data.iloc[8000:]
+    target_1_train, target_1_test = target_1_data.iloc[:8000], target_1_data.iloc[8000:]
     # 合并训练数据并保存
     deal_train_data = target_0_train.append(target_1_train)
     deal_train_data = deal_train_data.sample(frac=1.0)
-    deal_train_data.to_csv(FLAGS.deal_train_data_path, index=False)
     # build train data
     random_all_train_data = deal_train_data.sample(frac=1.0)
     # 13w for train and 3w for dev
-    train_data, dev_data = random_all_train_data.iloc[:130000], random_all_train_data.iloc[130000:]
-    return train_data[['question_text']].values, train_data[['target']].values, dev_data[['question_text']].values, \
-           dev_data[['target']].values
+    train_data, dev_data = random_all_train_data.iloc[:13000], random_all_train_data.iloc[13000:]
+    del random_all_train_data, deal_train_data, target_0_data, target_0_test, target_0_train, target_1_data, target_1_test, target_1_train
+    return embedding_texts(train_data[['question_text']], embedding_dict), train_data[['target']].values, dev_data[
+        ['question_text']].values, dev_data[['target']].values
 
 
 def read_embedding_dict():
@@ -65,7 +66,7 @@ def read_embedding_dict():
     :return:
     """
     embedding_dict = {}
-    with open(FLAGS.glove_path, 'r') as f:
+    with open(FLAGS.glove_path, 'r', encoding='utf-8') as f:
         for line in tqdm(f):
             values = line.split(" ")
             word = values[0]
@@ -82,10 +83,14 @@ def text_to_array(text, embedding_dict):
     :return:
     """
     empyt_emb = np.zeros(300)
-    text = text[:-1].split()[:100]
+    text = text[:-1].split()[:20]
     embeds = [embedding_dict.get(x, empyt_emb) for x in text]
-    embeds += [empyt_emb] * (100 - len(embeds))
+    embeds += [empyt_emb] * (20 - len(embeds))
     return np.array(embeds)
+
+
+def embedding_texts(df, embedding_dict):
+    return np.array([text_to_array(row[0], embedding_dict) for index,row in df.iterrows()])
 
 
 def batch_gen(features, labels, epoch, batch_size):
@@ -93,7 +98,7 @@ def batch_gen(features, labels, epoch, batch_size):
     dataset = tf.data.Dataset.from_tensor_slices((features, labels))
 
     # Shuffle, repeat, and batch the examples.
-    dataset = dataset.shuffle(1000).repeat(epoch).batch(batch_size)
+    dataset = dataset.shuffle(10).repeat(epoch).batch(batch_size)
 
     # Return the read end of the pipeline.
     return dataset.make_one_shot_iterator().get_next()
@@ -118,4 +123,14 @@ def model(n_hidden, input_data, weights, biases):
     # 将两个cell的outputs进行拼接
     outputs = tf.concat(outputs, 2)
     return tf.matmul(tf.transpose(outputs, [1, 0, 2])[-1], weights['out']) + biases['out']
-    cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
+    # cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
+
+
+if __name__ == '__main__':
+    embedding_dict = {}  # read_embedding_dict()
+    train_text, train_target, _, _ = re_build_data(embedding_dict)
+    print(len(train_text), len(train_target))
+    batch_iterator = batch_gen(train_text, train_target, 1, 16)
+    with tf.Session() as sess:
+        for i in range(2):
+            print(sess.run(batch_iterator))
