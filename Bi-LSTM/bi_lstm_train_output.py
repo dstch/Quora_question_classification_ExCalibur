@@ -90,10 +90,10 @@ def text_to_array(text, embedding_dict):
 
 
 def embedding_texts(df, embedding_dict):
-    return np.array([text_to_array(row[0], embedding_dict) for index,row in df.iterrows()])
+    return np.array([text_to_array(row[0], embedding_dict) for index, row in df.iterrows()])
 
 
-def batch_gen(features, labels, epoch, batch_size):
+def batch_gen(features, labels, epoch, batch_size, n_classes):
     # Convert the inputs to a Dataset.
     dataset = tf.data.Dataset.from_tensor_slices((features, labels))
 
@@ -101,7 +101,12 @@ def batch_gen(features, labels, epoch, batch_size):
     dataset = dataset.shuffle(10).repeat(epoch).batch(batch_size)
 
     # Return the read end of the pipeline.
-    return dataset.make_one_shot_iterator().get_next()
+    (features_tensor, label_tensor) = dataset.make_one_shot_iterator().get_next()
+    indices = tf.expand_dims(tf.range(0, batch_size, 1), 1)
+    label_tensor = tf.cast(label_tensor, tf.int32)
+    concated = tf.concat([indices, label_tensor], 1)
+    onehot_labels = tf.sparse_to_dense(concated, tf.stack([batch_size, n_classes]), 1.0, 0.0)
+    return (features_tensor, onehot_labels)
 
 
 def model(n_hidden, input_data, weights, biases):
@@ -130,7 +135,7 @@ if __name__ == '__main__':
     embedding_dict = {}  # read_embedding_dict()
     train_text, train_target, _, _ = re_build_data(embedding_dict)
     print(len(train_text), len(train_target))
-    batch_iterator = batch_gen(train_text, train_target, 1, 16)
+    batch_iterator = batch_gen(train_text, train_target, 1, 1, 2)
     with tf.Session() as sess:
         for i in range(2):
             print(sess.run(batch_iterator))
