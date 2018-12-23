@@ -1,7 +1,9 @@
 import tensorflow as tf
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+
 # from tensorflow import keras.keras.preprocessing.text.Tokenizer
 
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -31,29 +33,81 @@ flags.DEFINE_string("glove_path", "../train_data/vocab.txt", "pre-train embeddin
 flags.DEFINE_integer("embedding_dim", 300, "word embedding dim")
 flags.DEFINE_integer("seq_length", 15, "sentence max length")
 
-# re-build data file
-train_data = pd.read_csv(FLAGS.raw_train_data_path)
-target_0_data = train_data.loc[train_data.target == 0, :]
-target_1_data = train_data.loc[train_data.target == 1, :]
-# view different target count
-print("target=0:%s" % len(target_0_data), "target=1:%s" % len(target_1_data))
-# 打乱数据集
-target_0_data = target_0_data.sample(frac=1.0)
-target_1_data = target_1_data.sample(frac=1.0)
-# 切分数据集
-target_0_train, target_0_test = target_0_data.iloc[:80000], target_0_data.iloc[80000:]
-target_1_train, target_1_test = target_1_data.iloc[:80000], target_1_data.iloc[80000:]
-# 合并训练数据并保存
-deal_train_data = target_0_train.append(target_1_train)
-deal_train_data = deal_train_data.sample(frac=1.0)
-deal_train_data.to_csv(FLAGS.deal_train_data_path, index=False)
-# build train data
-random_all_train_data = deal_train_data.sample(frac=1.0)
-# 13w for train and 3w for dev
-train_data, dev_data = random_all_train_data.iloc[:130000], random_all_train_data.iloc[130000:]
+
+def re_build_data():
+    # re-build data file
+    train_data = pd.read_csv(FLAGS.raw_train_data_path)
+    target_0_data = train_data.loc[train_data.target == 0, :]
+    target_1_data = train_data.loc[train_data.target == 1, :]
+    # view different target count
+    print("target=0:%s" % len(target_0_data), "target=1:%s" % len(target_1_data))
+    # 打乱数据集
+    target_0_data = target_0_data.sample(frac=1.0)
+    target_1_data = target_1_data.sample(frac=1.0)
+    # 切分数据集
+    target_0_train, target_0_test = target_0_data.iloc[:80000], target_0_data.iloc[80000:]
+    target_1_train, target_1_test = target_1_data.iloc[:80000], target_1_data.iloc[80000:]
+    # 合并训练数据并保存
+    deal_train_data = target_0_train.append(target_1_train)
+    deal_train_data = deal_train_data.sample(frac=1.0)
+    deal_train_data.to_csv(FLAGS.deal_train_data_path, index=False)
+    # build train data
+    random_all_train_data = deal_train_data.sample(frac=1.0)
+    # 13w for train and 3w for dev
+    train_data, dev_data = random_all_train_data.iloc[:130000], random_all_train_data.iloc[130000:]
+    return train_data[['question_text']].values, train_data[['target']].values, dev_data[['question_text']].values, \
+           dev_data[['target']].values
+
+
+def read_embedding_dict():
+    """
+    read embedding dictionary
+    :return:
+    """
+    embedding_dict = {}
+    with open(FLAGS.glove_path, 'r') as f:
+        for line in tqdm(f):
+            values = line.split(" ")
+            word = values[0]
+            value = np.asarray(values[1:], dtype='float32')
+            embedding_dict[word] = value
+    return embedding_dict
+
+
+def text_to_array(text, embedding_dict):
+    """
+    Convert values to embeddings
+    :param text:
+    :param embedding_dict:
+    :return:
+    """
+    empyt_emb = np.zeros(300)
+    text = text[:-1].split()[:100]
+    embeds = [embedding_dict.get(x, empyt_emb) for x in text]
+    embeds += [empyt_emb] * (100 - len(embeds))
+    return np.array(embeds)
+
+
+def batch_gen(features, labels, epoch, batch_size):
+    # Convert the inputs to a Dataset.
+    dataset = tf.data.Dataset.from_tensor_slices((features, labels))
+
+    # Shuffle, repeat, and batch the examples.
+    dataset = dataset.shuffle(1000).repeat(epoch).batch(batch_size)
+
+    # Return the read end of the pipeline.
+    return dataset.make_one_shot_iterator().get_next()
 
 
 def model(n_hidden, input_data, weights, biases):
+    """
+    build bi-lstm model
+    :param n_hidden:
+    :param input_data:
+    :param weights:
+    :param biases:
+    :return:
+    """
     lstm_fw_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
     lstm_fw_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_fw_cell, output_keep_prob=0.7)
     lstm_bw_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
