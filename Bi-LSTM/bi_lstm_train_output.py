@@ -1,8 +1,10 @@
+import functools
 import tensorflow as tf
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+from pathlib import Path
 from tf_metrics import precision, recall, f1
 
 # from tensorflow import keras.keras.preprocessing.text.Tokenizer
@@ -148,7 +150,7 @@ def input_fn(features, labels, params=None, shuffle_and_repeat=True):
 
 def model_fn(features, labels, mode, params):
     n_hidden = params['n_hidden']
-    dropout = params['dropout']
+    # dropout = params['dropout']
 
     weights = {
         # Hidden layer weights => 2*n_hidden because of foward + backward cells
@@ -158,7 +160,7 @@ def model_fn(features, labels, mode, params):
         'out': tf.Variable(tf.random_normal([FLAGS.n_classes]))
     }
 
-    embedding_dict = read_embedding_dict()
+    embedding_dict = {}#read_embedding_dict()
     features = embedding_texts(features, embedding_dict)
 
     indices = tf.expand_dims(tf.range(0, params.get('batch_size', 32), 1), 1)
@@ -208,10 +210,32 @@ def model_fn(features, labels, mode, params):
 
 
 if __name__ == '__main__':
-    embedding_dict = {}  # read_embedding_dict()
-    train_text, train_target, _, _ = re_build_data(embedding_dict)
-    print(len(train_text), len(train_target))
-    batch_iterator = batch_gen(train_text, train_target, 1, 1, 2)
-    with tf.Session() as sess:
-        for i in range(2):
-            print(sess.run(batch_iterator))
+    # embedding_dict = {}  # read_embedding_dict()
+    # train_text, train_target, _, _ = re_build_data(embedding_dict)
+    # print(len(train_text), len(train_target))
+    # batch_iterator = batch_gen(train_text, train_target, 1, 1, 2)
+    # with tf.Session() as sess:
+    #     for i in range(2):
+    #         print(sess.run(batch_iterator))
+    params = {
+        'buffer': 1000,
+        'epoch': 1,
+        'batch_size': 32,
+        'n_hidden': 128,
+        'n_classes': 2,
+        'learning_rate': 0.001
+    }
+    # Estimator, train and evaluate
+    train_data = pd.read_csv(FLAGS.train_data_path)
+    dev_data = pd.read_csv(FLAGS.dev_data_path)
+    train_inpf = functools.partial(input_fn, train_data['question_text'].values, train_data['target'].values, params)
+    eval_inpf = functools.partial(input_fn, dev_data['question_text'].values, dev_data['target'].values, params)
+
+    cfg = tf.estimator.RunConfig(save_checkpoints_secs=120)
+    estimator = tf.estimator.Estimator(model_fn, './logs/results/model', cfg, params)
+    Path(estimator.eval_dir()).mkdir(parents=True, exist_ok=True)
+    hook = tf.contrib.estimator.stop_if_no_increase_hook(
+        estimator, 'f1', 500, min_steps=8000, run_every_secs=120)
+    train_spec = tf.estimator.TrainSpec(input_fn=train_inpf, hooks=[hook])
+    eval_spec = tf.estimator.EvalSpec(input_fn=eval_inpf, throttle_secs=120)
+    tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
