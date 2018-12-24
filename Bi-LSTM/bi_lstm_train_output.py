@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+from tf_metrics import precision, recall, f1
 
 # from tensorflow import keras.keras.preprocessing.text.Tokenizer
 
@@ -129,6 +130,81 @@ def model(n_hidden, input_data, weights, biases):
     outputs = tf.concat(outputs, 2)
     return tf.matmul(tf.transpose(outputs, [1, 0, 2])[-1], weights['out']) + biases['out']
     # cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
+
+
+def input_fn(features, labels, params=None, shuffle_and_repeat=True):
+    params = params if params is not None else {}
+    # Convert the inputs to a Dataset.
+    dataset = tf.data.Dataset.from_tensor_slices((features, labels))
+
+    if shuffle_and_repeat:
+        # Shuffle, repeat, and batch the examples.
+        dataset = dataset.shuffle(params.get('buffer', 1000)).repeat(params.get('epoch', 1)).batch(
+            params.get('batch_size', 32))
+    else:
+        dataset = dataset.batch(params.get('batch_size', 32))
+    return dataset
+
+
+def model_fn(features, labels, mode, params):
+    n_hidden = params['n_hidden']
+    dropout = params['dropout']
+
+    weights = {
+        # Hidden layer weights => 2*n_hidden because of foward + backward cells
+        'out': tf.Variable(tf.random_normal([2 * FLAGS.n_hidden, FLAGS.n_classes]))
+    }
+    biases = {
+        'out': tf.Variable(tf.random_normal([FLAGS.n_classes]))
+    }
+
+    embedding_dict = read_embedding_dict()
+    features = embedding_texts(features, embedding_dict)
+
+    indices = tf.expand_dims(tf.range(0, params.get('batch_size', 32), 1), 1)
+    label_tensor = tf.cast(labels, tf.int32)
+    concated = tf.concat([indices, label_tensor], 1)
+    onehot_labels = tf.sparse_to_dense(concated, tf.stack([params.get('batch_size', 32), params.get('n_classes', 2)]),
+                                       1.0, 0.0)
+
+    lstm_fw_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+    lstm_fw_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_fw_cell, output_keep_prob=0.7)
+    lstm_bw_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+    lstm_bw_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_bw_cell, output_keep_prob=0.7)
+
+    outputs, _ = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, features, dtype=tf.float32)
+    # 双向LSTM，输出outputs为两个cell的output
+    # 将两个cell的outputs进行拼接
+    outputs = tf.concat(outputs, 2)
+    outputs = tf.matmul(tf.transpose(outputs, [1, 0, 2])[-1], weights['out']) + biases['out']
+    pred = tf.argmax(tf.nn.softmax(outputs), 1)
+    if mode == tf.estimator.ModeKeys.PREDICT:
+
+        predictions = {
+            'pred': pred
+        }
+        return tf.estimator.EstimatorSpec(mode, predictions=predictions)
+    else:
+        indices = ['1', '0']
+        # Loss
+        cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=outputs, labels=onehot_labels))
+        metrics = {
+            'acc': tf.reduce_mean(tf.cast(tf.equal(tf.argmax(outputs, 1), tf.argmax(onehot_labels, 1)), tf.float32)),
+            'precision': precision(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
+            'recall': recall(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
+            'f1': f1(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
+        }
+        for metric_name, op in metrics.items():
+            tf.summary.scalar(metric_name, op[1])
+
+        if mode == tf.estimator.ModeKeys.EVAL:
+            return tf.estimator.EstimatorSpec(
+                mode, loss=cost, eval_metric_ops=metrics)
+
+        elif mode == tf.estimator.ModeKeys.TRAIN:
+            optimizer = tf.train.AdamOptimizer(learning_rate=params.get('learning_rate', 0.001)).minimize(cost)
+            return tf.estimator.EstimatorSpec(
+                mode, loss=cost, train_op=optimizer)
 
 
 if __name__ == '__main__':
