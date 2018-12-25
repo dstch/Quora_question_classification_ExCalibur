@@ -174,6 +174,7 @@ def input_fn(features, labels, params=None, shuffle_and_repeat=True):
     params = params if params is not None else {}
 
     split_lines = [' '.join(sentence_split(x, params['seq_length'])) for x in features]
+    labels_array = np.array([np.array([x]) for x in labels])
     vocab, embd = loadGloVe(params['glove_path'], params['embedding_dim'])
     # init vocab processor
     vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor(params['seq_length'])
@@ -182,7 +183,7 @@ def input_fn(features, labels, params=None, shuffle_and_repeat=True):
     word_ids = np.array(list(vocab_processor.transform(np.array(split_lines))))
 
     # Convert the inputs to a Dataset.
-    dataset = tf.data.Dataset.from_tensor_slices((word_ids, labels))
+    dataset = tf.data.Dataset.from_tensor_slices((word_ids, labels_array))
 
     if shuffle_and_repeat:
         # Shuffle, repeat, and batch the examples.
@@ -200,6 +201,7 @@ def model_fn(features, labels, mode, params):
     vocab, embd = loadGloVe(params['glove_path'], params['embedding_dim'])
     W = np.array(embd)
     features = tf.nn.embedding_lookup(W, features, name='text_embedding')
+    features = tf.cast(features, tf.float32)
     weights = {
         # Hidden layer weights => 2*n_hidden because of foward + backward cells
         'out': tf.Variable(tf.random_normal([2 * FLAGS.n_hidden, FLAGS.n_classes]))
@@ -207,7 +209,6 @@ def model_fn(features, labels, mode, params):
     biases = {
         'out': tf.Variable(tf.random_normal([FLAGS.n_classes]))
     }
-
 
     indices = tf.expand_dims(tf.range(0, params.get('batch_size', 32), 1), 1)
     label_tensor = tf.cast(labels, tf.int32)
@@ -238,12 +239,12 @@ def model_fn(features, labels, mode, params):
         cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=outputs, labels=onehot_labels))
         metrics = {
             'acc': tf.reduce_mean(tf.cast(tf.equal(tf.argmax(outputs, 1), tf.argmax(onehot_labels, 1)), tf.float32)),
-            'precision': precision(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
-            'recall': recall(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
-            'f1': f1(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
+            # 'precision': precision(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
+            # 'recall': recall(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
+            # 'f1': f1(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
         }
         for metric_name, op in metrics.items():
-            tf.summary.scalar(metric_name, op[1])
+            tf.summary.scalar(metric_name, op)
 
         if mode == tf.estimator.ModeKeys.EVAL:
             return tf.estimator.EstimatorSpec(
@@ -284,7 +285,7 @@ if __name__ == '__main__':
     estimator = tf.estimator.Estimator(model_fn, './logs/results/model', cfg, params)
     Path(estimator.eval_dir()).mkdir(parents=True, exist_ok=True)
     hook = tf.contrib.estimator.stop_if_no_increase_hook(
-        estimator, 'f1', 500, min_steps=8000, run_every_secs=120)
+        estimator, 'acc', 500, min_steps=8000, run_every_secs=120)
     train_spec = tf.estimator.TrainSpec(input_fn=train_inpf, hooks=[hook])
     eval_spec = tf.estimator.EvalSpec(input_fn=eval_inpf, throttle_secs=120)
     tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
