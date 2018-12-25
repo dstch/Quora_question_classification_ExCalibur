@@ -1,106 +1,87 @@
 import tensorflow as tf
-import os
+import numpy as np
+import datetime
+import time
 
-os.chdir("C:\\Users\\zhangxiang\\Desktop\\tensorflow_learning\\TensorFlow-IrisNN-master")
-print(os.getcwd())
-
-
-def read_data(file_queue):
-    reader = tf.TextLineReader(skip_header_lines=1)
-    key, value = reader.read(file_queue)
-    defaults = [[0], [0.], [0.], [0.], [0.], ['']]
-    Id, SepalLengthCm, SepalWidthCm, PetalLengthCm, PetalWidthCm, Species = tf.decode_csv(value, defaults)
-
-    preprocess_op = tf.case({
-        tf.equal(Species, tf.constant('Iris-setosa')): lambda: tf.constant(0),
-        tf.equal(Species, tf.constant('Iris-versicolor')): lambda: tf.constant(1),
-        tf.equal(Species, tf.constant('Iris-virginica')): lambda: tf.constant(2),
-    }, lambda: tf.constant(-1), exclusive=True)
-
-    return tf.stack([SepalLengthCm, SepalWidthCm, PetalLengthCm, PetalWidthCm]), preprocess_op
+FEATURES_RANK = 3  # The number of inputs
+LABELS_RANK = 2  # The number of outputs
 
 
-def create_pipeline(filename, batch_size, num_epochs=None):
-    file_queue = tf.train.string_input_producer([filename], num_epochs=num_epochs)
-    example, label = read_data(file_queue)
-
-    min_after_dequeue = 1000
-    capacity = min_after_dequeue + batch_size
-    example_batch, label_batch = tf.train.shuffle_batch(
-        [example, label], batch_size=batch_size, capacity=capacity,
-        min_after_dequeue=min_after_dequeue
-    )
-
-    return example_batch, label_batch
+# Returns a numpy array of rank LABELS_RANK based on the features argument.
+# Can be used when creating a training dataset.
+def features_to_labels(features):
+    sum_column = features.sum(1).reshape(features.shape[0], 1)
+    labels = np.hstack((sum_column * i for i in range(1, LABELS_RANK + 1)))
+    return labels
 
 
-x_train_batch, y_train_batch = create_pipeline('Iris-train.csv', 50, num_epochs=1000)
-x_test, y_test = create_pipeline('Iris-test.csv', 60)
-global_step = tf.Variable(0, trainable=False)
-learning_rate = 0.1  # tf.train.exponential_decay(0.1, global_step, 100, 0.0)
+def serving_input_fn():
+    x = tf.placeholder(dtype=tf.float32, shape=[None, FEATURES_RANK], name='x')  # match dtype in input_fn
+    inputs = {'x': x}
+    return tf.estimator.export.ServingInputReceiver(inputs, inputs)
 
-# Input layer
-x = tf.placeholder(tf.float32, [None, 4])
-y = tf.placeholder(tf.int32, [None])
 
-# Output layer
-w = tf.Variable(tf.random_normal([4, 3]))
-b = tf.Variable(tf.random_normal([3]))
-a = tf.matmul(x, w) + b
-prediction = tf.nn.softmax(a)
+def model_fn(features, labels, mode):
+    net = features["x"]  # input
+    for units in [4, 8, 4]:  # hidden units
+        net = tf.layers.dense(net, units=units, activation=tf.nn.relu)
+        net = tf.layers.dropout(net, rate=0.1)
+    output = tf.layers.dense(net, LABELS_RANK, activation=None)
 
-# Training
-cross_entropy = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(a, y))
-tf.summary.scalar('Cross_Entropy', cross_entropy)
-train_step = tf.train.GradientDescentOptimizer(learning_rate).minimize(cross_entropy, global_step=global_step)
-correct_prediction = tf.equal(tf.argmax(prediction, 1), tf.cast(y, tf.int64))
-accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-tf.summary.scalar('Accuracy', accuracy)
+    if mode == tf.estimator.ModeKeys.PREDICT:
+        return tf.estimator.EstimatorSpec(mode, predictions=output,
+                                          export_outputs={"out": tf.estimator.export.PredictOutput(output)})
 
-init = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
-merged_summary = tf.summary.merge_all()
+    loss = tf.losses.mean_squared_error(labels, output)
 
-sess = tf.Session()
-train_writer = tf.summary.FileWriter('logs/train', sess.graph)
-test_writer = tf.summary.FileWriter('logs/test', sess.graph)
-sess.run(init)
+    if mode == tf.estimator.ModeKeys.EVAL:
+        return tf.estimator.EstimatorSpec(mode, loss=loss)
 
-coord = tf.train.Coordinator()
-threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+    optimizer = tf.train.AdagradOptimizer(learning_rate=0.1)
+    train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
+    return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
 
-try:
-    print("Training: ")
-    count = 0
-    curr_x_test_batch, curr_y_test_batch = sess.run([x_test, y_test])
-    while not coord.should_stop():
-        # Run training steps or whatever
-        curr_x_train_batch, curr_y_train_batch = sess.run([x_train_batch, y_train_batch])
 
-        sess.run(train_step, feed_dict={
-            x: curr_x_train_batch,
-            y: curr_y_train_batch
-        })
+# expecting a numpy array of shape (1, FEATURE_RANK) for constant_feature argument
+def input_fn(num_samples, constant_feature=None, is_infinite=True):
+    feature_values = np.full((num_samples, FEATURES_RANK), constant_feature) if isinstance(constant_feature,
+                                                                                           np.ndarray) else np.random.rand(
+        num_samples, FEATURES_RANK)
+    feature_values = np.float32(feature_values)  # match dtype in serving_input_fn
+    labels = features_to_labels(feature_values)
+    dataset = tf.data.Dataset.from_tensors(({"x": feature_values}, labels))
+    if is_infinite:
+        dataset = dataset.repeat()
+    return dataset.make_one_shot_iterator().get_next()
 
-        count += 1
-        ce, summary = sess.run([cross_entropy, merged_summary], feed_dict={
-            x: curr_x_train_batch,
-            y: curr_y_train_batch
-        })
 
-        train_writer.add_summary(summary, count)
+estimator = tf.estimator.Estimator(
+    model_fn=model_fn,
+    model_dir="model_dir\\estimator-predictor-test-{date:%Y-%m-%d %H.%M.%S}".format(date=datetime.datetime.now()))
 
-        ce, test_acc, test_summary = sess.run([cross_entropy, accuracy, merged_summary], feed_dict={
-            x: curr_x_test_batch,
-            y: curr_y_test_batch
-        })
-        test_writer.add_summary(summary, count)
-        print('Batch', count, 'J = ', ce, '测试准确率=', test_acc)
-except tf.errors.OutOfRangeError:
-    print('Done training -- epoch limit reached')
-finally:
-    # When done, ask the threads to stop.
-    coord.request_stop()
+train = estimator.train(input_fn=lambda: input_fn(50), steps=500)
+evaluate = estimator.evaluate(input_fn=lambda: input_fn(20), steps=1)
 
-# Wait for threads to finish.
-coord.join(threads)
-sess.close()
+predictor = tf.contrib.predictor.from_estimator(estimator, serving_input_fn)
+
+consistency_check_features = np.random.rand(1, FEATURES_RANK)
+consistency_check_labels = features_to_labels(consistency_check_features)
+
+num_calls_predictor = 100
+predictor_input = {"x": consistency_check_features}
+start_time_predictor = time.clock()
+for i in range(num_calls_predictor):
+    predictor_prediction = predictor(predictor_input)
+delta_time_predictor = 1. / num_calls_predictor * (time.clock() - start_time_predictor)
+
+num_calls_estimator_predict = 10
+estimator_input = lambda: input_fn(1, consistency_check_features, False)
+start_time_estimator_predict = time.clock()
+for i in range(num_calls_estimator_predict):
+    estimator_prediction = list(estimator.predict(input_fn=estimator_input))
+delta_time_estimator = 1. / num_calls_estimator_predict * (time.clock() - start_time_estimator_predict)
+
+print("{} --> {}\n  predictor={}\n  estimator={}.\n".format(consistency_check_features, consistency_check_labels,
+                                                            predictor_prediction, estimator_prediction))
+print("Time used per estimator.predict() call: {:.5f}s, predictor(): {:.5f}s ==> predictor is {:.0f}x faster!".format(
+    delta_time_estimator, delta_time_predictor, delta_time_estimator / delta_time_predictor))

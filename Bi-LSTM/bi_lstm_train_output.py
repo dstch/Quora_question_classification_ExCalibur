@@ -2,6 +2,7 @@ import functools
 import tensorflow as tf
 import pandas as pd
 import numpy as np
+import string
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 from pathlib import Path
@@ -96,6 +97,41 @@ def embedding_texts(df, embedding_dict):
     return np.array([text_to_array(row[0], embedding_dict) for index, row in df.iterrows()])
 
 
+def sentence_split(sentence, max_length):
+    """
+    remove punctuation and split sentence.return list of words
+    :param sentence:
+    :return:
+    """
+    # sentence = re.sub("[\s+\.\!\/_,$%^*(+\"\')]+|[+——()?【】“”！，。？、~@#￥%……&*（）]+'", "", sentence)
+    sentence = [x for x in sentence if x not in string.punctuation]
+    sentence = ''.join(sentence)
+    words = sentence.split()
+    if max_length == 0:
+        return words
+    else:
+        if len(words) > max_length:
+            words = words[:max_length]
+        elif len(words) < max_length:
+            words = words + [" "] * (max_length - len(words))
+        return words
+
+
+def loadGloVe(filename, emb_size):
+    vocab = []
+    embd = []
+    vocab.append('unk')  # 装载不认识的词
+    embd.append([0] * emb_size)  # 这个emb_size可能需要指定
+    file = open(filename, 'r', encoding='utf-8')
+    for line in file.readlines():
+        row = line.strip().split(' ')
+        vocab.append(row[0])
+        embd.append([float(x) for x in row[1:]])
+    print('Loaded GloVe!')
+    file.close()
+    return vocab, embd
+
+
 def batch_gen(features, labels, epoch, batch_size, n_classes):
     # Convert the inputs to a Dataset.
     dataset = tf.data.Dataset.from_tensor_slices((features, labels))
@@ -136,8 +172,17 @@ def model(n_hidden, input_data, weights, biases):
 
 def input_fn(features, labels, params=None, shuffle_and_repeat=True):
     params = params if params is not None else {}
+
+    split_lines = [' '.join(sentence_split(x, params['seq_length'])) for x in features]
+    vocab, embd = loadGloVe(params['glove_path'], params['embedding_dim'])
+    # init vocab processor
+    vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor(params['seq_length'])
+    # fit the vocab from glove
+    pretrain = vocab_processor.fit(vocab)
+    word_ids = np.array(list(vocab_processor.transform(np.array(split_lines))))
+
     # Convert the inputs to a Dataset.
-    dataset = tf.data.Dataset.from_tensor_slices((features, labels))
+    dataset = tf.data.Dataset.from_tensor_slices((word_ids, labels))
 
     if shuffle_and_repeat:
         # Shuffle, repeat, and batch the examples.
@@ -152,6 +197,9 @@ def model_fn(features, labels, mode, params):
     n_hidden = params['n_hidden']
     # dropout = params['dropout']
 
+    vocab, embd = loadGloVe(params['glove_path'], params['embedding_dim'])
+    W = np.array(embd)
+    features = tf.nn.embedding_lookup(W, features, name='text_embedding')
     weights = {
         # Hidden layer weights => 2*n_hidden because of foward + backward cells
         'out': tf.Variable(tf.random_normal([2 * FLAGS.n_hidden, FLAGS.n_classes]))
@@ -160,8 +208,6 @@ def model_fn(features, labels, mode, params):
         'out': tf.Variable(tf.random_normal([FLAGS.n_classes]))
     }
 
-    embedding_dict = {}#read_embedding_dict()
-    features = embedding_texts(features, embedding_dict)
 
     indices = tf.expand_dims(tf.range(0, params.get('batch_size', 32), 1), 1)
     label_tensor = tf.cast(labels, tf.int32)
@@ -223,7 +269,10 @@ if __name__ == '__main__':
         'batch_size': 32,
         'n_hidden': 128,
         'n_classes': 2,
-        'learning_rate': 0.001
+        'learning_rate': 0.001,
+        'glove_path': "../train_data/vocab.txt",
+        'seq_length': 15,
+        'embedding_dim': 300
     }
     # Estimator, train and evaluate
     train_data = pd.read_csv(FLAGS.train_data_path)
