@@ -251,7 +251,8 @@ def model_fn(features, labels, mode, params):
                 mode, loss=cost, eval_metric_ops=metrics)
 
         elif mode == tf.estimator.ModeKeys.TRAIN:
-            optimizer = tf.train.AdamOptimizer(learning_rate=params.get('learning_rate', 0.001)).minimize(cost)
+            optimizer = tf.train.AdamOptimizer(learning_rate=params.get('learning_rate', 0.001)).minimize(cost,
+                                                                                                          global_step=tf.train.get_global_step())
             return tf.estimator.EstimatorSpec(
                 mode, loss=cost, train_op=optimizer)
 
