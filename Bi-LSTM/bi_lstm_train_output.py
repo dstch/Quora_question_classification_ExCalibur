@@ -3,12 +3,8 @@ import tensorflow as tf
 import pandas as pd
 import numpy as np
 import string
-from sklearn.model_selection import train_test_split
-from tqdm import tqdm
 from pathlib import Path
 from tf_metrics import precision, recall, f1
-
-# from tensorflow import keras.keras.preprocessing.text.Tokenizer
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -39,7 +35,7 @@ flags.DEFINE_integer("embedding_dim", 300, "word embedding dim")
 flags.DEFINE_integer("seq_length", 15, "sentence max length")
 
 
-def re_build_data(embedding_dict):
+def re_build_data():
     # re-build data file
     train_data = pd.read_csv(FLAGS.train_data_path)
     target_0_data = train_data.loc[train_data.target == 0, :]
@@ -59,42 +55,6 @@ def re_build_data(embedding_dict):
     random_all_train_data = deal_train_data.sample(frac=1.0)
     # 13w for train and 3w for dev
     train_data, dev_data = random_all_train_data.iloc[:13000], random_all_train_data.iloc[13000:]
-    del random_all_train_data, deal_train_data, target_0_data, target_0_test, target_0_train, target_1_data, target_1_test, target_1_train
-    return embedding_texts(train_data[['question_text']], embedding_dict), train_data[['target']].values, dev_data[
-        ['question_text']].values, dev_data[['target']].values
-
-
-def read_embedding_dict():
-    """
-    read embedding dictionary
-    :return:
-    """
-    embedding_dict = {}
-    with open(FLAGS.glove_path, 'r', encoding='utf-8') as f:
-        for line in tqdm(f):
-            values = line.split(" ")
-            word = values[0]
-            value = np.asarray(values[1:], dtype='float32')
-            embedding_dict[word] = value
-    return embedding_dict
-
-
-def text_to_array(text, embedding_dict):
-    """
-    Convert values to embeddings
-    :param text:
-    :param embedding_dict:
-    :return:
-    """
-    empyt_emb = np.zeros(300)
-    text = text[:-1].split()[:20]
-    embeds = [embedding_dict.get(x, empyt_emb) for x in text]
-    embeds += [empyt_emb] * (20 - len(embeds))
-    return np.array(embeds)
-
-
-def embedding_texts(df, embedding_dict):
-    return np.array([text_to_array(row[0], embedding_dict) for index, row in df.iterrows()])
 
 
 def sentence_split(sentence, max_length):
@@ -132,45 +92,12 @@ def loadGloVe(filename, emb_size):
     return vocab, embd
 
 
-def batch_gen(features, labels, epoch, batch_size, n_classes):
-    # Convert the inputs to a Dataset.
-    dataset = tf.data.Dataset.from_tensor_slices((features, labels))
-
-    # Shuffle, repeat, and batch the examples.
-    dataset = dataset.shuffle(10).repeat(epoch).batch(batch_size)
-
-    # Return the read end of the pipeline.
-    (features_tensor, label_tensor) = dataset.make_one_shot_iterator().get_next()
-    indices = tf.expand_dims(tf.range(0, batch_size, 1), 1)
-    label_tensor = tf.cast(label_tensor, tf.int32)
-    concated = tf.concat([indices, label_tensor], 1)
-    onehot_labels = tf.sparse_to_dense(concated, tf.stack([batch_size, n_classes]), 1.0, 0.0)
-    return (features_tensor, onehot_labels)
+def generator_fn(words, qid):
+    for line_words, line_tags in zip(words, qid):
+        yield (line_words, line_tags)
 
 
-def model(n_hidden, input_data, weights, biases):
-    """
-    build bi-lstm model
-    :param n_hidden:
-    :param input_data:
-    :param weights:
-    :param biases:
-    :return:
-    """
-    lstm_fw_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
-    lstm_fw_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_fw_cell, output_keep_prob=0.7)
-    lstm_bw_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
-    lstm_bw_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_bw_cell, output_keep_prob=0.7)
-
-    outputs, _ = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, input_data, dtype=tf.float32)
-    # 双向LSTM，输出outputs为两个cell的output
-    # 将两个cell的outputs进行拼接
-    outputs = tf.concat(outputs, 2)
-    return tf.matmul(tf.transpose(outputs, [1, 0, 2])[-1], weights['out']) + biases['out']
-    # cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
-
-
-def input_fn(features, labels, params=None, shuffle_and_repeat=True):
+def input_fn(features, labels, params=None, shuffle_and_repeat=True, isTest=False):
     params = params if params is not None else {}
 
     split_lines = [' '.join(sentence_split(x, params['seq_length'])) for x in features]
@@ -210,12 +137,6 @@ def model_fn(features, labels, mode, params):
         'out': tf.Variable(tf.random_normal([FLAGS.n_classes]))
     }
 
-    indices = tf.expand_dims(tf.range(0, params.get('batch_size', 32), 1), 1)
-    label_tensor = tf.cast(labels, tf.int32)
-    concated = tf.concat([indices, label_tensor], 1)
-    onehot_labels = tf.sparse_to_dense(concated, tf.stack([params.get('batch_size', 32), params.get('n_classes', 2)]),
-                                       1.0, 0.0)
-
     lstm_fw_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
     lstm_fw_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_fw_cell, output_keep_prob=0.7)
     lstm_bw_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
@@ -226,27 +147,27 @@ def model_fn(features, labels, mode, params):
     # 将两个cell的outputs进行拼接
     outputs = tf.concat(outputs, 2)
     outputs = tf.matmul(tf.transpose(outputs, [1, 0, 2])[-1], weights['out']) + biases['out']
-    pred_2 = tf.argmax(tf.nn.softmax(outputs), 1)
-    pred = tf.argmax(outputs, 1)
+    pred = tf.argmax(tf.nn.softmax(outputs), 1)
     if mode == tf.estimator.ModeKeys.PREDICT:
 
         predictions = {
-            'pred': pred_2
+            'pred': pred
         }
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
     else:
-        indices = ['1', '0']
+        indices = tf.expand_dims(tf.range(0, params.get('batch_size', 32), 1), 1)
+        label_tensor = tf.cast(labels, tf.int32)
+        concated = tf.concat([indices, label_tensor], 1)
+        onehot_labels = tf.sparse_to_dense(concated,
+                                           tf.stack([params.get('batch_size', 32), params.get('n_classes', 2)]),
+                                           1.0, 0.0)
         # Loss
         cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=outputs, labels=onehot_labels))
         tags = tf.argmax(onehot_labels, 1)
         metrics = {
-            # 'acc': tf.reduce_mean(tf.cast(tf.equal(tf.argmax(outputs, 1), tf.argmax(onehot_labels, 1)), tf.float32)),
-            # 'precision': precision(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
-            # 'recall': recall(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
-            # 'f1': f1(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
-            'acc': tf.metrics.accuracy(tags, pred_2),
-            'precision': tf.metrics.precision(tags, pred_2),
-            'recall': tf.metrics.recall(tags, pred_2),
+            'acc': tf.metrics.accuracy(tags, pred),
+            'precision': tf.metrics.precision(tags, pred),
+            'recall': tf.metrics.recall(tags, pred),
             # 'f1': tf.metrics.mean_iou(tags, pred_2, 2),
         }
         for metric_name, op in metrics.items():
@@ -264,13 +185,6 @@ def model_fn(features, labels, mode, params):
 
 
 if __name__ == '__main__':
-    # embedding_dict = {}  # read_embedding_dict()
-    # train_text, train_target, _, _ = re_build_data(embedding_dict)
-    # print(len(train_text), len(train_target))
-    # batch_iterator = batch_gen(train_text, train_target, 1, 1, 2)
-    # with tf.Session() as sess:
-    #     for i in range(2):
-    #         print(sess.run(batch_iterator))
     params = {
         'buffer': 32,
         'epoch': 2,
@@ -296,3 +210,15 @@ if __name__ == '__main__':
     train_spec = tf.estimator.TrainSpec(input_fn=train_inpf, hooks=[hook])
     eval_spec = tf.estimator.EvalSpec(input_fn=eval_inpf, throttle_secs=120)
     tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
+    # Estimator, predict
+    test_data = pd.read_csv(FLAGS.test_data_path)
+    test_inpf = functools.partial(input_fn, test_data['question_text'].values, params, shuffle_and_repeat=False,
+                                  isTest=True)
+    text_gen = generator_fn(test_data['question_text'].values, test_data['qid'].values)
+    preds_gen = estimator.predict(test_inpf)
+    save_data = []
+    for texts, preds in zip(text_gen, preds_gen):
+        part_save_data = []
+        (words, qid) = texts
+        save_data.append(qid, preds['pred'])
+    pd.DataFrame(save_data).to_csv('./logs/results/submit.csv')
