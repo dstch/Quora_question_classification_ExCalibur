@@ -226,25 +226,31 @@ def model_fn(features, labels, mode, params):
     # 将两个cell的outputs进行拼接
     outputs = tf.concat(outputs, 2)
     outputs = tf.matmul(tf.transpose(outputs, [1, 0, 2])[-1], weights['out']) + biases['out']
-    pred = tf.argmax(tf.nn.softmax(outputs), 1)
+    pred_2 = tf.argmax(tf.nn.softmax(outputs), 1)
+    pred = tf.argmax(outputs, 1)
     if mode == tf.estimator.ModeKeys.PREDICT:
 
         predictions = {
-            'pred': pred
+            'pred': pred_2
         }
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
     else:
         indices = ['1', '0']
         # Loss
         cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=outputs, labels=onehot_labels))
+        tags = tf.argmax(onehot_labels, 1)
         metrics = {
-            'acc': tf.reduce_mean(tf.cast(tf.equal(tf.argmax(outputs, 1), tf.argmax(onehot_labels, 1)), tf.float32)),
+            # 'acc': tf.reduce_mean(tf.cast(tf.equal(tf.argmax(outputs, 1), tf.argmax(onehot_labels, 1)), tf.float32)),
             # 'precision': precision(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
             # 'recall': recall(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
             # 'f1': f1(onehot_labels, outputs, params.get('n_classes', 2), indices, weights['out']),
+            'acc': tf.metrics.accuracy(tags, pred_2),
+            'precision': tf.metrics.precision(tags, pred_2),
+            'recall': tf.metrics.recall(tags, pred_2),
+            # 'f1': tf.metrics.mean_iou(tags, pred_2, 2),
         }
         for metric_name, op in metrics.items():
-            tf.summary.scalar(metric_name, op)
+            tf.summary.scalar(metric_name, op[1])
 
         if mode == tf.estimator.ModeKeys.EVAL:
             return tf.estimator.EstimatorSpec(
@@ -266,8 +272,8 @@ if __name__ == '__main__':
     #     for i in range(2):
     #         print(sess.run(batch_iterator))
     params = {
-        'buffer': 1000,
-        'epoch': 1,
+        'buffer': 32,
+        'epoch': 2,
         'batch_size': 32,
         'n_hidden': 128,
         'n_classes': 2,
