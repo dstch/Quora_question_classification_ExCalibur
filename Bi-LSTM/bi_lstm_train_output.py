@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 import string
 from pathlib import Path
-from tf_metrics import precision, recall, f1
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -134,10 +133,10 @@ def model_fn(features, labels, mode, params):
     features = tf.cast(features, tf.float32)
     weights = {
         # Hidden layer weights => 2*n_hidden because of foward + backward cells
-        'out': tf.Variable(tf.random_normal([2 * FLAGS.n_hidden, FLAGS.n_classes]))
+        'out': tf.Variable(tf.random_normal([2 * n_hidden, params.get('n_classes', 2)]))
     }
     biases = {
-        'out': tf.Variable(tf.random_normal([FLAGS.n_classes]))
+        'out': tf.Variable(tf.random_normal([params.get('n_classes', 2)]))
     }
 
     lstm_fw_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
@@ -224,4 +223,4 @@ if __name__ == '__main__':
         part_save_data = []
         (words, qid) = texts
         save_data.append([qid, preds['pred']])
-    pd.DataFrame(save_data).to_csv('./logs/results/submit.csv', index=False, header=False)
+    pd.DataFrame(save_data).to_csv('./logs/results/submission.csv.csv', index=False, header=False)
