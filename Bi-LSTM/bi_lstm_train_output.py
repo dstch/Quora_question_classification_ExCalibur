@@ -2,8 +2,9 @@ import functools
 import tensorflow as tf
 import pandas as pd
 import numpy as np
-import string
+import string, csv
 from pathlib import Path
+import gensim
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -11,9 +12,10 @@ tf.logging.set_verbosity(tf.logging.INFO)
 flags = tf.flags
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("raw_train_data_path", "../raw_data/train.csv", "train data path")
+flags.DEFINE_string("raw_train_data_path", "../train_data/raw_train.csv", "train data path")
 flags.DEFINE_string("train_data_path", "../train_data/train.csv", "train data path")
 flags.DEFINE_string("dev_data_path", "../train_data/dev.csv", "dev data path")
+flags.DEFINE_string("deal_train_data_path", "../train_data/deal_train.csv", "")
 flags.DEFINE_string("test_data_path", "../train_data/test.csv", "test data path")
 flags.DEFINE_string("train_tfrecord_path", "../train_data/train_word_id.tf_record", "train data path")
 flags.DEFINE_string("dev_tfrecord_path", "../train_data/dev_word_id.tf_record", "dev data path")
@@ -32,11 +34,13 @@ flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
 flags.DEFINE_string("glove_path", "../train_data/vocab.txt", "pre-train embedding model path")
 flags.DEFINE_integer("embedding_dim", 300, "word embedding dim")
 flags.DEFINE_integer("seq_length", 15, "sentence max length")
+flags.DEFINE_string("gensim_path", "./glove.840B.300d/glove_model.txt", "")
+
 
 
 def re_build_data():
     # re-build data file
-    train_data = pd.read_csv(FLAGS.train_data_path)
+    train_data = pd.read_csv(FLAGS.raw_train_data_path)
     target_0_data = train_data.loc[train_data.target == 0, :]
     target_1_data = train_data.loc[train_data.target == 1, :]
     # view different target count
@@ -45,15 +49,18 @@ def re_build_data():
     target_0_data = target_0_data.sample(frac=1.0)
     target_1_data = target_1_data.sample(frac=1.0)
     # 切分数据集
-    target_0_train, target_0_test = target_0_data.iloc[:8000], target_0_data.iloc[8000:]
-    target_1_train, target_1_test = target_1_data.iloc[:8000], target_1_data.iloc[8000:]
+    target_0_train, target_0_test = target_0_data.iloc[:80000], target_0_data.iloc[80000:]
+    target_1_train, target_1_test = target_1_data.iloc[:80000], target_1_data.iloc[80000:]
     # 合并训练数据并保存
     deal_train_data = target_0_train.append(target_1_train)
     deal_train_data = deal_train_data.sample(frac=1.0)
+    deal_train_data.to_csv(FLAGS.deal_train_data_path, index=False)
     # build train data
     random_all_train_data = deal_train_data.sample(frac=1.0)
     # 13w for train and 3w for dev
-    train_data, dev_data = random_all_train_data.iloc[:13000], random_all_train_data.iloc[13000:]
+    train_data, dev_data = random_all_train_data.iloc[:130000], random_all_train_data.iloc[130000:]
+    train_data.to_csv(FLAGS.train_data_path, index=False)
+    dev_data.to_csv(FLAGS.dev_data_path, index=False)
 
 
 def sentence_split(sentence, max_length):
@@ -74,6 +81,36 @@ def sentence_split(sentence, max_length):
         elif len(words) < max_length:
             words = words + [" "] * (max_length - len(words))
         return words
+
+
+# read csv
+def _read_csv(input_file):
+    """
+    read csv file,get data
+    :param input_file:
+    :return:
+    """
+    with tf.gfile.Open(input_file, "r") as f:
+        reader = csv.reader(f)
+        lines = []
+        for line in reader:
+            lines.append(line)
+        return lines[1:]  # remove header
+
+
+# build vocab
+def build_vocab(model_file, data_file, vocab_path):
+    # load glove model
+    model = gensim.models.KeyedVectors.load_word2vec_format(model_file)
+    lines = _read_csv(data_file)
+    vocab = []
+    for line in lines:
+        vocab.extend(sentence_split(line[1], 0))
+    vocab = set(vocab)
+    with open(vocab_path, 'w', encoding='utf-8') as f:
+        for word in vocab:
+            if word in model:
+                f.write(word + ' ' + ' '.join([str(x) for x in model[word]]) + '\n')
 
 
 def loadGloVe(filename, emb_size):
@@ -187,6 +224,8 @@ def model_fn(features, labels, mode, params):
 
 
 if __name__ == '__main__':
+    re_build_data()
+    build_vocab(FLAGS.gensim_path, FLAGS.deal_train_data_path, FLAGS.glove_path)
     params = {
         'buffer': 128,
         'epoch': 10,
