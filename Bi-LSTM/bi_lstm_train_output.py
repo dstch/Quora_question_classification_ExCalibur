@@ -17,25 +17,10 @@ flags.DEFINE_string("train_data_path", "../train_data/train.csv", "train data pa
 flags.DEFINE_string("dev_data_path", "../train_data/dev.csv", "dev data path")
 flags.DEFINE_string("deal_train_data_path", "../train_data/deal_train.csv", "")
 flags.DEFINE_string("test_data_path", "../train_data/test.csv", "test data path")
-flags.DEFINE_string("train_tfrecord_path", "../train_data/train_word_id.tf_record", "train data path")
-flags.DEFINE_string("dev_tfrecord_path", "../train_data/dev_word_id.tf_record", "dev data path")
-flags.DEFINE_string("test_tfrecord_path", "../train_data/test_word_id.tf_record", "test data path")
-flags.DEFINE_integer("n_hidden", 128, "LSTM hidden layer num of features")
-flags.DEFINE_integer("num_step", 16, "input data timesteps")
-flags.DEFINE_integer("n_classes", 2, "number of classes")
-flags.DEFINE_float("learning_rate", 0.01, "learnning rate")
-flags.DEFINE_integer("batch_size", 32, "batch size")
-flags.DEFINE_integer("max_steps", 4000, "max step,stop condition")
-flags.DEFINE_integer("display_step", 1000, "save model steps")
-flags.DEFINE_string("train_writer_path", "./logs/train", "train tensorboard save path")
-flags.DEFINE_string("dev_writer_path", "./logs/train", "dev tensorboard save path")
 flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
 # flags.DEFINE_string("glove_path", "./glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
 flags.DEFINE_string("glove_path", "../train_data/vocab.txt", "pre-train embedding model path")
-flags.DEFINE_integer("embedding_dim", 300, "word embedding dim")
-flags.DEFINE_integer("seq_length", 15, "sentence max length")
 flags.DEFINE_string("gensim_path", "./glove.840B.300d/glove_model.txt", "")
-
 
 
 def re_build_data():
@@ -59,8 +44,9 @@ def re_build_data():
     random_all_train_data = deal_train_data.sample(frac=1.0)
     # 13w for train and 3w for dev
     train_data, dev_data = random_all_train_data.iloc[:130000], random_all_train_data.iloc[130000:]
-    train_data.to_csv(FLAGS.train_data_path, index=False)
-    dev_data.to_csv(FLAGS.dev_data_path, index=False)
+    # train_data.to_csv(FLAGS.train_data_path, index=False)
+    # dev_data.to_csv(FLAGS.dev_data_path, index=False)
+    return train_data, dev_data
 
 
 def sentence_split(sentence, max_length):
@@ -224,8 +210,11 @@ def model_fn(features, labels, mode, params):
 
 
 if __name__ == '__main__':
-    re_build_data()
-    build_vocab(FLAGS.gensim_path, FLAGS.deal_train_data_path, FLAGS.glove_path)
+    train_data, dev_data = re_build_data()
+    # build_vocab(FLAGS.gensim_path, FLAGS.deal_train_data_path, FLAGS.glove_path)
+    def get_coefs(word, *arr):
+        return word, np.asarray(arr, dtype='float32')
+    embeddings_index = dict(get_coefs(*o.split(" ")) for o in open(EMBEDDING_FILE))
     params = {
         'buffer': 128,
         'epoch': 10,
@@ -238,8 +227,8 @@ if __name__ == '__main__':
         'embedding_dim': 300
     }
     # Estimator, train and evaluate
-    train_data = pd.read_csv(FLAGS.train_data_path)
-    dev_data = pd.read_csv(FLAGS.dev_data_path)
+    # train_data = pd.read_csv(FLAGS.train_data_path)
+    # dev_data = pd.read_csv(FLAGS.dev_data_path)
     train_inpf = functools.partial(input_fn, train_data['question_text'].values, train_data['target'].values, params)
     eval_inpf = functools.partial(input_fn, dev_data['question_text'].values, dev_data['target'].values, params)
 
