@@ -212,9 +212,6 @@ def model_fn(features, labels, mode, params):
 if __name__ == '__main__':
     train_data, dev_data = re_build_data()
     # build_vocab(FLAGS.gensim_path, FLAGS.deal_train_data_path, FLAGS.glove_path)
-    def get_coefs(word, *arr):
-        return word, np.asarray(arr, dtype='float32')
-    embeddings_index = dict(get_coefs(*o.split(" ")) for o in open(EMBEDDING_FILE))
     params = {
         'buffer': 128,
         'epoch': 10,
