@@ -203,6 +203,7 @@ if __name__ == '__main__':
     # Estimator, train and evaluate
     train_vects = np.array([text_to_array(X_text, embedding_dict) for X_text in train_data['question_text'].values])
     eval_vects = np.array([text_to_array(X_text, embedding_dict) for X_text in dev_data['question_text'].values])
+    del embedding_dict
     train_inpf = functools.partial(input_fn, train_vects, train_data['target'].values, params)
     eval_inpf = functools.partial(input_fn, eval_vects, dev_data['target'].values, params)
 
@@ -213,7 +214,7 @@ if __name__ == '__main__':
         estimator, 'acc', 500, min_steps=8000, run_every_secs=120)
     train_spec = tf.estimator.TrainSpec(input_fn=train_inpf, hooks=[hook])
     eval_spec = tf.estimator.EvalSpec(input_fn=eval_inpf, throttle_secs=120)
-    # tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
+    tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
     # Estimator, predict
     test_data = pd.read_csv(FLAGS.test_data_path)
     test_inpf = functools.partial(input_fn, test_data['question_text'].values, [], params, shuffle_and_repeat=False,
