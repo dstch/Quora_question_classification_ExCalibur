@@ -5,6 +5,7 @@ from tensorflow.contrib.keras.api.keras.preprocessing.text import Tokenizer
 from tensorflow.contrib.keras.api.keras.preprocessing.sequence import pad_sequences
 import numpy as np
 import string, csv
+from pathlib import Path
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -42,15 +43,10 @@ def re_build_data():
     return train_data, dev_data
 
 
-# def clean_punctuation(sentence):
-#     for p in "/-":
-#         txt = txt.replace(p, ' ')
-#     for p in "'`‘":
-#         txt = txt.replace(p, '')
-#     for p in punct:
-#         txt = txt.replace(p, f' {p} ' if p in embed_punct else ' _punct_ ')
-#         # known punctuation gets space padded, otherwise we use a newn token
-#     return txt
+def clean_punctuation(sentence):
+    sentence = [x for x in sentence if x not in string.punctuation]
+    sentence = ''.join(sentence)
+    return sentence
 
 
 def get_coefs(word, *arr):
@@ -78,8 +74,8 @@ def input_fn(features, labels, params=None, shuffle_and_repeat=True, isTest=Fals
 
 def model_fn(features, labels, mode, params):
     n_hidden = params['n_hidden']
-
-    features = tf.cast(features, tf.float32)
+    embed = tf.nn.embedding_lookup(embeddings, features)
+    # features = tf.cast(features, tf.float32)
     weights = {
         # Hidden layer weights => 2*n_hidden because of foward + backward cells
         'out': tf.Variable(tf.random_normal([2 * n_hidden, params.get('n_classes', 2)]))
@@ -93,7 +89,7 @@ def model_fn(features, labels, mode, params):
     lstm_bw_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
     lstm_bw_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_bw_cell, output_keep_prob=0.7)
 
-    outputs, _ = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, features, dtype=tf.float32)
+    outputs, _ = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, embed, dtype=tf.float32)
     # 双向LSTM，输出outputs为两个cell的output
     # 将两个cell的outputs进行拼接
     outputs = tf.concat(outputs, 2)
@@ -137,13 +133,17 @@ def model_fn(features, labels, mode, params):
 
 test_data = pd.read_csv(FLAGS.test_data_path)
 train_data, dev_data = re_build_data()
+# clean data
+train_data["question_text"] = train_data["question_text"].map(lambda x: clean_punctuation(x))
+test_data["question_text"] = test_data["question_text"].map(lambda x: clean_punctuation(x))
+dev_data["question_text"] = dev_data["question_text"].map(lambda x: clean_punctuation(x))
 # fill up the missing values
 train_X = train_data["question_text"].fillna("_##_").values
 val_X = dev_data["question_text"].fillna("_##_").values
 test_X = test_data["question_text"].fillna("_##_").values
 
 # creates a mapping from the words to the embedding vectors=
-embeddings_index = dict(get_coefs(*o.split(" ")) for o in open(FLAGS.glove_path))
+embeddings_index = dict(get_coefs(*o.split(" ")) for o in open(FLAGS.glove_path, encoding='utf-8'))
 vocab_size = len(embeddings_index.keys())
 print('vocab size :', vocab_size)
 
@@ -164,6 +164,7 @@ val_y = dev_data['target'].values
 all_embs = np.stack(embeddings_index.values())
 emb_mean, emb_std = all_embs.mean(), all_embs.std()
 embed_size = all_embs.shape[1]
+del all_embs
 
 word_index = tokenizer.word_index
 nb_words = min(vocab_size, len(word_index))  # only want at most vocab_size words in our vocabulary
@@ -171,10 +172,18 @@ embedding_matrix = np.random.normal(emb_mean, emb_std,
                                     (nb_words, embed_size))
 
 for word, i in word_index.items():  # insert embeddings we that exist into our matrix
-    if i >= vocab_size: continue
+    if i >= vocab_size:
+        continue
     embedding_vector = embeddings_index.get(word)
     if embedding_vector is not None:
-        embedding_matrix[i] = embedding_vector
+        try:
+            embedding_matrix[i] = embedding_vector
+        except:
+            print('error:', i)
+
+embeddings = tf.get_variable(name="embeddings", shape=embedding_matrix.shape,
+                             initializer=tf.constant_initializer(np.array(embedding_matrix)),
+                             trainable=False)
 
 params = {
     'buffer': 128,
@@ -185,7 +194,8 @@ params = {
     'learning_rate': 0.001,
     'glove_path': "../train_data/vocab.txt",
     'seq_length': 15,
-    'embedding_dim': 300
+    'embedding_dim': 300,
+    'embeddings': embeddings
 }
 
 train_inpf = functools.partial(input_fn, train_X, train_y, params)
