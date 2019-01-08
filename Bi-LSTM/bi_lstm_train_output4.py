@@ -142,7 +142,7 @@ train_X = train_data["question_text"].fillna("_##_").values
 val_X = dev_data["question_text"].fillna("_##_").values
 test_X = test_data["question_text"].fillna("_##_").values
 
-# creates a mapping from the words to the embedding vectors=
+# creates a mapping from the words to the embedding vectors
 embeddings_index = dict(get_coefs(*o.split(" ")) for o in open(FLAGS.glove_path, encoding='utf-8'))
 vocab_size = len(embeddings_index.keys())
 print('vocab size :', vocab_size)
