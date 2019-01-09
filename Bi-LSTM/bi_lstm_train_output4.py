@@ -53,6 +53,11 @@ def get_coefs(word, *arr):
     return word, np.asarray(arr, dtype='float32')
 
 
+def generator_fn(words, qid):
+    for line_words, line_tags in zip(words, qid):
+        yield (line_words, line_tags)
+
+
 def input_fn(features, labels, params=None, shuffle_and_repeat=True, isTest=False):
     params = params if params is not None else {}
 
@@ -195,7 +200,7 @@ params = {
     'glove_path': "../train_data/vocab.txt",
     'seq_length': 15,
     'embedding_dim': 300,
-    'embeddings': embeddings
+    # 'embeddings': embeddings
 }
 
 train_inpf = functools.partial(input_fn, train_X, train_y, params)
@@ -207,3 +212,16 @@ hook = tf.contrib.estimator.stop_if_no_increase_hook(
     estimator, 'acc', 500, min_steps=8000, run_every_secs=120)
 train_spec = tf.estimator.TrainSpec(input_fn=train_inpf, hooks=[hook])
 eval_spec = tf.estimator.EvalSpec(input_fn=eval_inpf, throttle_secs=120)
+# tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
+# Estimator, predict
+test_data = pd.read_csv(FLAGS.test_data_path)
+test_inpf = functools.partial(input_fn, test_data['question_text'].values, [], params, shuffle_and_repeat=False,
+                              isTest=True)
+text_gen = generator_fn(test_data['question_text'].values, test_data['qid'].values)
+preds_gen = estimator.predict(test_inpf)
+save_data = [['qid', 'target']]
+for texts, preds in zip(text_gen, preds_gen):
+    part_save_data = []
+    (words, qid) = texts
+    save_data.append([qid, preds['pred']])
+pd.DataFrame(save_data).to_csv('./logs/results/submission.csv.csv', index=False, header=False)

@@ -115,8 +115,12 @@ def input_fn(features, labels, params=None, shuffle_and_repeat=True, isTest=Fals
         labels_array = np.array([np.array(['0']) for x in features])
     else:
         labels_array = np.array([np.array([x]) for x in labels])
+
+    features_placeholder = tf.placeholder(features.dtype, features.shape)
+    labels_placeholder = tf.placeholder(labels.dtype, labels.shape)
+
     # Convert the inputs to a Dataset.
-    dataset = tf.data.Dataset.from_tensor_slices((features, labels_array))
+    dataset = tf.data.Dataset.from_tensor_slices((features_placeholder, labels_placeholder))
 
     if shuffle_and_repeat:
         # Shuffle, repeat, and batch the examples.
@@ -124,7 +128,11 @@ def input_fn(features, labels, params=None, shuffle_and_repeat=True, isTest=Fals
             params.get('batch_size', 32))
     else:
         dataset = dataset.batch(params.get('batch_size', 32))
-    return dataset
+
+    iterator = dataset.make_initializable_iterator()
+    iterator = tf.get_variable(name="data_iterator", initializer={features_placeholder: features,
+                                                                  labels_placeholder: labels})
+    return iterator.ge
 
 
 def model_fn(features, labels, mode, params):
