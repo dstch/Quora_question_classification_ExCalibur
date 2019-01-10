@@ -27,7 +27,8 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("train_data_path", "../train_data/train.csv", "train data path")
 flags.DEFINE_string("test_data_path", "../train_data/test.csv", "test data path")
 flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
-flags.DEFINE_string("glove_path", "./glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
+# flags.DEFINE_string("glove_path", "./glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
+flags.DEFINE_string("glove_path", "../train_data/vocab.txt", "pre-train embedding model path")
 flags.DEFINE_integer("max_sentence_len", 15, "max length of sentence")
 flags.DEFINE_integer("embedding_dim", 300, "word embedding dim")
 flags.DEFINE_integer("n_hidden", 128, "LSTM hidden layer num of features")
@@ -111,6 +112,13 @@ test_X = pad_sequences(test_X, maxlen=FLAGS.max_sentence_len)
 train_y = train_data['target'].values
 val_y = dev_data['target'].values
 
+indices = tf.expand_dims(tf.range(0, FLAGS.batch_size, 1), 1)
+concated = tf.concat([indices, train_y], 1)
+train_y = tf.sparse_to_dense(concated, tf.stack([FLAGS.batch_size, FLAGS.n_classes]), 1.0, 0.0)
+
+concated = tf.concat([indices, val_y], 1)
+val_y = tf.sparse_to_dense(concated, tf.stack([FLAGS.batch_size, FLAGS.n_classes]), 1.0, 0.0)
+
 all_embs = np.stack(embeddings_index.values())
 emb_mean, emb_std = all_embs.mean(), all_embs.std()
 embed_size = all_embs.shape[1]
@@ -133,10 +141,11 @@ for word, i in word_index.items():  # insert embeddings we that exist into our m
             print(embedding_matrix.shape)
 
 X = tf.placeholder(tf.int32, [None, FLAGS.max_sentence_len], name='X')
-Y = tf.placeholder(tf.float32, [None], name='Y')
+Y = tf.placeholder(tf.float32, [None,FLAGS.n_classes], name='Y')
 batch_size = tf.placeholder(tf.int64)
 
-dataset = tf.data.Dataset.from_tensor_slices((X, Y)).shuffle(buffer_size=32).batch(batch_size).repeat()
+dataset = tf.data.Dataset.from_tensor_slices((X, Y)).batch(
+    batch_size)  # shuffle(buffer_size=32).batch(batch_size).repeat()
 test_dataset = tf.data.Dataset.from_tensor_slices((X, Y)).batch(batch_size)
 
 iterator = tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
