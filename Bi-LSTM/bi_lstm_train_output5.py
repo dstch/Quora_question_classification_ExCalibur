@@ -1,11 +1,9 @@
-import functools
 import tensorflow as tf
 import pandas as pd
 from tensorflow.contrib.keras.api.keras.preprocessing.text import Tokenizer
 from tensorflow.contrib.keras.api.keras.preprocessing.sequence import pad_sequences
 import numpy as np
-import string, csv
-from pathlib import Path
+import string
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -100,7 +98,6 @@ test_X = tokenizer.texts_to_sequences(test_X)
 train_X = pad_sequences(train_X, maxlen=FLAGS.max_sentence_len)
 val_X = pad_sequences(val_X, maxlen=FLAGS.max_sentence_len)
 test_X = pad_sequences(test_X, maxlen=FLAGS.max_sentence_len)
-
 
 all_embs = np.stack(embeddings_index.values())
 emb_mean, emb_std = all_embs.mean(), all_embs.std()
