@@ -1,14 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-"""
-@author: dstch
-@license: (C) Copyright 2013-2019, Regulus Tech.
-@contact: dstch@163.com
-@file: bi_lstm_train_output5.py
-@time: 2019/1/10 20:31
-@desc:
-"""
-
 import functools
 import tensorflow as tf
 import pandas as pd
@@ -27,14 +16,13 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("train_data_path", "../train_data/train.csv", "train data path")
 flags.DEFINE_string("test_data_path", "../train_data/test.csv", "test data path")
 flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
-# flags.DEFINE_string("glove_path", "./glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
-flags.DEFINE_string("glove_path", "../train_data/vocab.txt", "pre-train embedding model path")
+flags.DEFINE_string("glove_path", "./glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
 flags.DEFINE_integer("max_sentence_len", 15, "max length of sentence")
 flags.DEFINE_integer("embedding_dim", 300, "word embedding dim")
 flags.DEFINE_integer("n_hidden", 128, "LSTM hidden layer num of features")
-flags.DEFINE_integer("batch_size", 32, "batch size")
+flags.DEFINE_integer("batch_size", 100, "batch size")
 flags.DEFINE_integer("n_classes", 2, "number of classes")
-flags.DEFINE_float("learning_rate", 0.01, "learnning rate")
+flags.DEFINE_float("learning_rate", 0.001, "learnning rate")
 
 
 def re_build_data():
@@ -88,6 +76,11 @@ train_data, dev_data = re_build_data()
 train_data["question_text"] = train_data["question_text"].map(lambda x: clean_punctuation(x))
 test_data["question_text"] = test_data["question_text"].map(lambda x: clean_punctuation(x))
 dev_data["question_text"] = dev_data["question_text"].map(lambda x: clean_punctuation(x))
+# Get the response
+train_y = train_data['target'].values
+val_y = dev_data['target'].values
+train_y = train_y.reshape(130000, 1)
+val_y = val_y.reshape(len(val_y), 1)
 # fill up the missing values
 train_X = train_data["question_text"].fillna("_##_").values
 val_X = dev_data["question_text"].fillna("_##_").values
@@ -108,16 +101,6 @@ train_X = pad_sequences(train_X, maxlen=FLAGS.max_sentence_len)
 val_X = pad_sequences(val_X, maxlen=FLAGS.max_sentence_len)
 test_X = pad_sequences(test_X, maxlen=FLAGS.max_sentence_len)
 
-# Get the response
-train_y = train_data['target'].values
-val_y = dev_data['target'].values
-
-indices = tf.expand_dims(tf.range(0, FLAGS.batch_size, 1), 1)
-concated = tf.concat([indices, train_y], 1)
-train_y = tf.sparse_to_dense(concated, tf.stack([FLAGS.batch_size, FLAGS.n_classes]), 1.0, 0.0)
-
-concated = tf.concat([indices, val_y], 1)
-val_y = tf.sparse_to_dense(concated, tf.stack([FLAGS.batch_size, FLAGS.n_classes]), 1.0, 0.0)
 
 all_embs = np.stack(embeddings_index.values())
 emb_mean, emb_std = all_embs.mean(), all_embs.std()
@@ -141,11 +124,10 @@ for word, i in word_index.items():  # insert embeddings we that exist into our m
             print(embedding_matrix.shape)
 
 X = tf.placeholder(tf.int32, [None, FLAGS.max_sentence_len], name='X')
-Y = tf.placeholder(tf.float32, [None,FLAGS.n_classes], name='Y')
+Y = tf.placeholder(tf.int32, [None, 1], name='Y')
 batch_size = tf.placeholder(tf.int64)
 
-dataset = tf.data.Dataset.from_tensor_slices((X, Y)).batch(
-    batch_size)  # shuffle(buffer_size=32).batch(batch_size).repeat()
+dataset = tf.data.Dataset.from_tensor_slices((X, Y)).shuffle(buffer_size=100).batch(batch_size).repeat()
 test_dataset = tf.data.Dataset.from_tensor_slices((X, Y)).batch(batch_size)
 
 iterator = tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
@@ -173,16 +155,22 @@ biases = {
 }
 pred = model(FLAGS.n_hidden, embed, weights, biases)
 
+indices = tf.expand_dims(tf.range(0, FLAGS.batch_size, 1), 1)
+concated = tf.concat([indices, labels], 1)
+labels = tf.sparse_to_dense(concated, tf.stack([FLAGS.batch_size, FLAGS.n_classes]), 1.0, 0.0)
+
 # Define loss and optimizer
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=labels))
 optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate).minimize(cost)
 
 # Evaluate model
+tags = tf.argmax(labels, 1)
 y_pred_cls = tf.argmax(tf.nn.softmax(pred), 1)
-correct_pred = tf.equal(tf.argmax(pred, 1), tf.argmax(labels, 1))
+correct_pred = tf.equal(tf.argmax(pred, 1), tags)
 accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+
 with tf.name_scope('metrics'):
-    F1, f1_update = tf.contrib.metrics.f1_score(labels=labels, predictions=y_pred_cls, name='my_metric')
+    F1, f1_update = tf.contrib.metrics.f1_score(labels=tags, predictions=y_pred_cls, name='my_metric')
 
 running_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="my_metric")
 reset_op = tf.variables_initializer(var_list=running_vars)
@@ -194,10 +182,10 @@ f1, costs = [], []
 with tf.Session() as sess:
     sess.run(init)
     num_iter = 1000
-    sess.run(train_init_op, feed_dict={X: train_X, Y: train_y, batch_size: FLAGS.batch_size})
+    data = sess.run(train_init_op, feed_dict={X: train_X, Y: train_y, batch_size: FLAGS.batch_size})
 
     num_batches = int(train_X.shape[0] / FLAGS.batch_size)
-    for epoch in range(2):
+    for epoch in range(10):
         iter_cost = 0.
         prev_iter = 0.
         for i in range(num_batches):
@@ -216,3 +204,23 @@ with tf.Session() as sess:
                 costs.append(iter_cost)
                 print("Epoch %s Iteration %s cost: %s  f1: %s " % (epoch, i, iter_cost, cur_f1))
                 batch_cost = 0.  # reset batch_cost)
+
+    bs = 100
+    sess.run(test_init_op, feed_dict={X: val_X, Y: val_y, batch_size: bs})
+    val_cost = 0.
+    num_batches = int(val_X.shape[0] / bs)  # number of minibatches of size minibatch_size in the train set
+    tf.set_random_seed(2018)
+
+    for _ in range(num_batches):
+        sess.run(f1_update)
+    print('Validation f1: ', sess.run(F1))
+
+    sz = 30
+    temp_y = train_y[:test_X.shape[0]]
+    sub = test_data[['qid']]
+    sess.run(test_init_op, feed_dict={X: test_X, Y: temp_y, batch_size: sz})
+    sub['prediction'] = np.concatenate([sess.run(y_pred_cls) for _ in range(int(test_X.shape[0] / sz))])
+
+    # sub['prediction'] = (sub['prediction'] > thresh).astype(np.int16)
+    sub.to_csv("submission.csv", index=False)
+    sub.sample()
