@@ -21,6 +21,7 @@ flags.DEFINE_integer("n_hidden", 128, "LSTM hidden layer num of features")
 flags.DEFINE_integer("batch_size", 100, "batch size")
 flags.DEFINE_integer("n_classes", 2, "number of classes")
 flags.DEFINE_float("learning_rate", 0.001, "learnning rate")
+flags.DEFINE_float("epoch", 5, "epoch of train")
 
 
 def re_build_data():
@@ -42,8 +43,9 @@ def re_build_data():
     # build train data
     random_all_train_data = deal_train_data.sample(frac=1.0)
     # 13w for train and 3w for dev
-    train_data, dev_data = random_all_train_data.iloc[:130000], random_all_train_data.iloc[130000:]
-    return train_data, dev_data
+    # train_data, dev_data = random_all_train_data.iloc[:130000], random_all_train_data.iloc[130000:]
+    # return train_data, dev_data
+    return random_all_train_data
 
 
 def clean_punctuation(sentence):
@@ -69,19 +71,20 @@ def model(n_hidden, input_data, weights, biases):
 
 
 test_data = pd.read_csv(FLAGS.test_data_path)
-train_data, dev_data = re_build_data()
+# train_data, dev_data = re_build_data()
+train_data = re_build_data()
 # clean data
 train_data["question_text"] = train_data["question_text"].map(lambda x: clean_punctuation(x))
 test_data["question_text"] = test_data["question_text"].map(lambda x: clean_punctuation(x))
-dev_data["question_text"] = dev_data["question_text"].map(lambda x: clean_punctuation(x))
+# dev_data["question_text"] = dev_data["question_text"].map(lambda x: clean_punctuation(x))
 # Get the response
 train_y = train_data['target'].values
-val_y = dev_data['target'].values
-train_y = train_y.reshape(130000, 1)
-val_y = val_y.reshape(len(val_y), 1)
+# val_y = dev_data['target'].values
+train_y = train_y.reshape(len(train_y), 1)
+# val_y = val_y.reshape(len(val_y), 1)
 # fill up the missing values
 train_X = train_data["question_text"].fillna("_##_").values
-val_X = dev_data["question_text"].fillna("_##_").values
+# val_X = dev_data["question_text"].fillna("_##_").values
 test_X = test_data["question_text"].fillna("_##_").values
 
 # creates a mapping from the words to the embedding vectors=
@@ -92,11 +95,11 @@ print('vocab size :', vocab_size)
 tokenizer = Tokenizer(num_words=vocab_size, filters='', lower=False)
 tokenizer.fit_on_texts(list(train_X))
 train_X = tokenizer.texts_to_sequences(train_X)
-val_X = tokenizer.texts_to_sequences(val_X)
+# val_X = tokenizer.texts_to_sequences(val_X)
 test_X = tokenizer.texts_to_sequences(test_X)
 
 train_X = pad_sequences(train_X, maxlen=FLAGS.max_sentence_len)
-val_X = pad_sequences(val_X, maxlen=FLAGS.max_sentence_len)
+# val_X = pad_sequences(val_X, maxlen=FLAGS.max_sentence_len)
 test_X = pad_sequences(test_X, maxlen=FLAGS.max_sentence_len)
 
 all_embs = np.stack(embeddings_index.values())
@@ -140,8 +143,6 @@ embeddings = tf.get_variable(name="embeddings", shape=embedding_matrix.shape,
 
 embed = tf.nn.embedding_lookup(embeddings, questions)
 
-input_data = tf.placeholder(dtype=tf.float32, shape=[None, FLAGS.max_sentence_len, FLAGS.embedding_dim],
-                            name='input_data')
 # Define weights
 weights = {
     # Hidden layer weights => 2*n_hidden because of foward + backward cells
@@ -182,7 +183,7 @@ with tf.Session() as sess:
     data = sess.run(train_init_op, feed_dict={X: train_X, Y: train_y, batch_size: FLAGS.batch_size})
 
     num_batches = int(train_X.shape[0] / FLAGS.batch_size)
-    for epoch in range(10):
+    for epoch in range(FLAGS.epoch):
         iter_cost = 0.
         prev_iter = 0.
         for i in range(num_batches):
@@ -202,17 +203,17 @@ with tf.Session() as sess:
                 print("Epoch %s Iteration %s cost: %s  f1: %s " % (epoch, i, iter_cost, cur_f1))
                 batch_cost = 0.  # reset batch_cost)
 
-    bs = 100
-    sess.run(test_init_op, feed_dict={X: val_X, Y: val_y, batch_size: bs})
-    val_cost = 0.
-    num_batches = int(val_X.shape[0] / bs)  # number of minibatches of size minibatch_size in the train set
-    tf.set_random_seed(2018)
+    # bs = 100
+    # sess.run(test_init_op, feed_dict={X: val_X, Y: val_y, batch_size: bs})
+    # val_cost = 0.
+    # num_batches = int(val_X.shape[0] / bs)  # number of minibatches of size minibatch_size in the train set
+    # tf.set_random_seed(2018)
+    #
+    # for _ in range(num_batches):
+    #     sess.run(f1_update)
+    # print('Validation f1: ', sess.run(F1))
 
-    for _ in range(num_batches):
-        sess.run(f1_update)
-    print('Validation f1: ', sess.run(F1))
-
-    sz = 30
+    sz = 100
     temp_y = train_y[:test_X.shape[0]]
     sub = test_data[['qid']]
     sess.run(test_init_op, feed_dict={X: test_X, Y: temp_y, batch_size: sz})
