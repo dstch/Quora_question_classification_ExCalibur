@@ -15,13 +15,14 @@ flags.DEFINE_string("train_data_path", "../train_data/train.csv", "train data pa
 flags.DEFINE_string("test_data_path", "../train_data/test.csv", "test data path")
 flags.DEFINE_string("checkpoint_path", "./logs/checkpoint", "model save path")
 flags.DEFINE_string("glove_path", "./glove.840B.300d/glove.840B.300d.txt", "pre-train embedding model path")
-flags.DEFINE_integer("max_sentence_len", 15, "max length of sentence")
+flags.DEFINE_integer("max_sentence_len", 30, "max length of sentence")
 flags.DEFINE_integer("embedding_dim", 300, "word embedding dim")
-flags.DEFINE_integer("n_hidden", 128, "LSTM hidden layer num of features")
-flags.DEFINE_integer("batch_size", 100, "batch size")
+flags.DEFINE_integer("n_hidden", 256, "LSTM hidden layer num of features")
+flags.DEFINE_integer("batch_size", 1000, "batch size")
+flags.DEFINE_integer("buffer_size", 1000, "batch size")
 flags.DEFINE_integer("n_classes", 2, "number of classes")
 flags.DEFINE_float("learning_rate", 0.001, "learnning rate")
-flags.DEFINE_float("epoch", 5, "epoch of train")
+flags.DEFINE_float("epoch", 10, "epoch of train")
 
 
 def re_build_data():
@@ -72,7 +73,8 @@ def model(n_hidden, input_data, weights, biases):
 
 test_data = pd.read_csv(FLAGS.test_data_path)
 # train_data, dev_data = re_build_data()
-train_data = re_build_data()
+# train_data = re_build_data()
+train_data = pd.read_csv(FLAGS.train_data_path)
 # clean data
 train_data["question_text"] = train_data["question_text"].map(lambda x: clean_punctuation(x))
 test_data["question_text"] = test_data["question_text"].map(lambda x: clean_punctuation(x))
@@ -127,7 +129,9 @@ X = tf.placeholder(tf.int32, [None, FLAGS.max_sentence_len], name='X')
 Y = tf.placeholder(tf.int32, [None, 1], name='Y')
 batch_size = tf.placeholder(tf.int64)
 
-dataset = tf.data.Dataset.from_tensor_slices((X, Y)).shuffle(buffer_size=100).batch(batch_size).repeat()
+dataset = tf.data.Dataset.from_tensor_slices((X, Y))
+dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batch_size)).shuffle(
+    buffer_size=FLAGS.buffer_size).repeat()
 test_dataset = tf.data.Dataset.from_tensor_slices((X, Y)).batch(batch_size)
 
 iterator = tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
@@ -213,7 +217,7 @@ with tf.Session() as sess:
     #     sess.run(f1_update)
     # print('Validation f1: ', sess.run(F1))
 
-    sz = 100
+    sz = 30
     temp_y = train_y[:test_X.shape[0]]
     sub = test_data[['qid']]
     sess.run(test_init_op, feed_dict={X: test_X, Y: temp_y, batch_size: sz})
