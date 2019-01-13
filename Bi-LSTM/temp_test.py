@@ -1,4 +1,9 @@
 import tensorflow as tf
+import operator
+from tqdm import tqdm
+import string
+import pandas as pd
+import numpy as np
 
 # parameters config
 flags = tf.flags
@@ -19,6 +24,47 @@ flags.DEFINE_float("epoch", 10, "epoch of train")
 flags.DEFINE_integer("attention_size", 256, "attention size")
 
 
+def build_vocab(sentences, verbose=True):
+    """
+    :param sentences: list of list of words
+    :return: dictionary of words and their count
+    """
+    vocab = {}
+    for sentence in tqdm(sentences, disable=(not verbose)):
+        for word in sentence:
+            try:
+                vocab[word] += 1
+            except KeyError:
+                vocab[word] = 1
+    return vocab
+
+
+def check_coverage(vocab, embeddings_index):
+    a = {}
+    oov = {}
+    k = 0
+    i = 0
+    for word in tqdm(vocab):
+        try:
+            a[word] = embeddings_index[word]
+            k += vocab[word]
+        except:
+            oov[word] = vocab[word]
+            i += vocab[word]
+            pass
+    print('Found embeddings for {:.2%} of vocab'.format(len(a) / len(vocab)))
+    print('Found embeddings for  {:.2%} of all text'.format(k / (k + i)))
+    sorted_x = sorted(oov.items(), key=operator.itemgetter(1))[::-1]
+
+    return sorted_x
+
+
+def clean_punctuation(sentence):
+    sentence = [x for x in sentence if x not in string.punctuation]
+    sentence = ''.join(sentence)
+    return sentence
+
+
 def model1(n_hidden, input_data, weights, biases):
     lstm_fw_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
     lstm_fw_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_fw_cell, output_keep_prob=0.7)
@@ -30,6 +76,10 @@ def model1(n_hidden, input_data, weights, biases):
     # 将两个cell的outputs进行拼接
     outputs = tf.concat(outputs, 2)
     return tf.matmul(tf.transpose(outputs, [1, 0, 2])[-1], weights['out']) + biases['out']
+
+
+def get_coefs(word, *arr):
+    return word, np.asarray(arr, dtype='float32')
 
 
 def model(n_hidden, input_data, weights, biases, attention_size):
@@ -68,16 +118,23 @@ def model(n_hidden, input_data, weights, biases, attention_size):
     return tf.matmul(final_output, weights['out']) + biases['out']
 
 
-input_data = tf.placeholder(dtype=tf.float32, shape=[None, FLAGS.max_sentence_len, FLAGS.embedding_dim],
-                            name='input_data')
+# input_data = tf.placeholder(dtype=tf.float32, shape=[None, FLAGS.max_sentence_len, FLAGS.embedding_dim],
+#                             name='input_data')
+#
+# # Define weights
+# weights = {
+#     # Hidden layer weights => 2*n_hidden because of foward + backward cells
+#     'out': tf.Variable(tf.random_normal([2 * FLAGS.n_hidden, FLAGS.n_classes]))
+# }
+# biases = {
+#     'out': tf.Variable(tf.random_normal([FLAGS.n_classes]))
+# }
+# pred = model(FLAGS.n_hidden, input_data, weights, biases, FLAGS.attention_size)
+# print(pred)
 
-# Define weights
-weights = {
-    # Hidden layer weights => 2*n_hidden because of foward + backward cells
-    'out': tf.Variable(tf.random_normal([2 * FLAGS.n_hidden, FLAGS.n_classes]))
-}
-biases = {
-    'out': tf.Variable(tf.random_normal([FLAGS.n_classes]))
-}
-pred = model(FLAGS.n_hidden, input_data, weights, biases, FLAGS.attention_size)
-print(pred)
+train_data = pd.read_csv(FLAGS.train_data_path)
+# clean data
+sentences = train_data["question_text"].map(lambda x: clean_punctuation(x))
+vocab = build_vocab(sentences)
+embeddings_index = dict(get_coefs(*o.split(" ")) for o in open(FLAGS.glove_path, encoding='utf-8'))
+oov = check_coverage(vocab,embeddings_index)
