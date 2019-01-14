@@ -4,6 +4,9 @@ from tensorflow.contrib.keras.api.keras.preprocessing.text import Tokenizer
 from tensorflow.contrib.keras.api.keras.preprocessing.sequence import pad_sequences
 import numpy as np
 import string
+from tensorflow.python.framework import ops
+from tensorflow.python.ops import math_ops
+from tensorflow.python.eager import context
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -26,30 +29,6 @@ flags.DEFINE_float("epoch", 10, "epoch of train")
 flags.DEFINE_integer("attention_size", 256, "attention size")
 
 
-def re_build_data():
-    # re-build data file
-    train_data = pd.read_csv(FLAGS.train_data_path)
-    target_0_data = train_data.loc[train_data.target == 0, :]
-    target_1_data = train_data.loc[train_data.target == 1, :]
-    # view different target count
-    print("target=0:%s" % len(target_0_data), "target=1:%s" % len(target_1_data))
-    # 打乱数据集
-    target_0_data = target_0_data.sample(frac=1.0)
-    target_1_data = target_1_data.sample(frac=1.0)
-    # 切分数据集
-    target_0_train, target_0_test = target_0_data.iloc[:80000], target_0_data.iloc[80000:]
-    target_1_train, target_1_test = target_1_data.iloc[:80000], target_1_data.iloc[80000:]
-    # 合并训练数据并保存
-    deal_train_data = target_0_train.append(target_1_train)
-    deal_train_data = deal_train_data.sample(frac=1.0)
-    # build train data
-    random_all_train_data = deal_train_data.sample(frac=1.0)
-    # 13w for train and 3w for dev
-    # train_data, dev_data = random_all_train_data.iloc[:130000], random_all_train_data.iloc[130000:]
-    # return train_data, dev_data
-    return random_all_train_data
-
-
 def clean_punctuation(sentence):
     sentence = [x for x in sentence if x not in string.punctuation]
     sentence = ''.join(sentence)
@@ -60,12 +39,57 @@ def get_coefs(word, *arr):
     return word, np.asarray(arr, dtype='float32')
 
 
+def cyclic_learning_rate(global_step,
+                         learning_rate=0.01,
+                         max_lr=0.1,
+                         step_size=20.,
+                         gamma=0.99994,
+                         mode='triangular',
+                         name=None):
+    if global_step is None:
+        raise ValueError("global_step is required for cyclic_learning_rate.")
+    with ops.name_scope(name, "CyclicLearningRate",
+                        [learning_rate, global_step]) as name:
+        learning_rate = ops.convert_to_tensor(learning_rate, name="learning_rate")
+        dtype = learning_rate.dtype
+        global_step = math_ops.cast(global_step, dtype)
+        step_size = math_ops.cast(step_size, dtype)
+
+        def cyclic_lr():
+            """Helper to recompute learning rate; most helpful in eager-mode."""
+            # computing: cycle = floor( 1 + global_step / ( 2 * step_size ) )
+            double_step = math_ops.multiply(2., step_size)
+            global_div_double_step = math_ops.divide(global_step, double_step)
+            cycle = math_ops.floor(math_ops.add(1., global_div_double_step))
+            # computing: x = abs( global_step / step_size – 2 * cycle + 1 )
+            double_cycle = math_ops.multiply(2., cycle)
+            global_div_step = math_ops.divide(global_step, step_size)
+            tmp = math_ops.subtract(global_div_step, double_cycle)
+            x = math_ops.abs(math_ops.add(1., tmp))
+            # computing: clr = learning_rate + ( max_lr – learning_rate ) * max( 0, 1 - x )
+            a1 = math_ops.maximum(0., math_ops.subtract(1., x))
+            a2 = math_ops.subtract(max_lr, learning_rate)
+            clr = math_ops.multiply(a1, a2)
+            if mode == 'triangular2':
+                clr = math_ops.divide(clr, math_ops.cast(math_ops.pow(2, math_ops.cast(
+                    cycle - 1, tf.int32)), tf.float32))
+            if mode == 'exp_range':
+                clr = math_ops.multiply(math_ops.pow(gamma, global_step), clr)
+            return math_ops.add(clr, learning_rate, name=name)
+
+        if not context.executing_eagerly():
+            cyclic_lr = cyclic_lr()
+
+    return cyclic_lr
+
+
 def model(n_hidden, input_data, weights, biases, attention_size):
     # bi-lstm
     lstm_fw_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
     lstm_fw_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_fw_cell, output_keep_prob=0.7)
     lstm_bw_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
     lstm_bw_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_bw_cell, output_keep_prob=0.7)
+    outputs, _ = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, input_data, dtype=tf.float32)
     outputs, _ = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, input_data, dtype=tf.float32)
     outputs = tf.concat(outputs, 2)
     outputs = tf.transpose(outputs, [1, 0, 2])
@@ -188,7 +212,8 @@ labels = tf.sparse_to_dense(concated, tf.stack([FLAGS.batch_size, FLAGS.n_classe
 
 # Define loss and optimizer
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=labels))
-optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate).minimize(cost)
+learning_rate = tf.placeholder(tf.float32, None, name='learning_rate')
+optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
 
 # Evaluate model
 tags = tf.argmax(labels, 1)
@@ -210,13 +235,14 @@ with tf.Session() as sess:
     sess.run(init)
     num_iter = 1000
     data = sess.run(train_init_op, feed_dict={X: train_X, Y: train_y, batch_size: FLAGS.batch_size})
-
+    step = 0
     num_batches = int(train_X.shape[0] / FLAGS.batch_size)
     for epoch in range(FLAGS.epoch):
         iter_cost = 0.
         prev_iter = 0.
         for i in range(num_batches):
-            _, batch_loss, _ = sess.run([optimizer, cost, f1_update])
+            lr = sess.run(cyclic_learning_rate(step, learning_rate=FLAGS.learning_rate))
+            _, batch_loss, _ = sess.run([optimizer, cost, f1_update], feed_dict={learning_rate: lr})
             iter_cost += batch_loss
 
             # End training after
@@ -231,6 +257,7 @@ with tf.Session() as sess:
                 costs.append(iter_cost)
                 print("Epoch %s Iteration %s cost: %s  f1: %s " % (epoch, i, iter_cost, cur_f1))
                 batch_cost = 0.  # reset batch_cost)
+            step += 1
 
     # bs = 100
     # sess.run(test_init_op, feed_dict={X: val_X, Y: val_y, batch_size: bs})
