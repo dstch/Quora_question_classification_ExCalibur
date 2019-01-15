@@ -132,9 +132,21 @@ def model(n_hidden, input_data, weights, biases, attention_size):
 # pred = model(FLAGS.n_hidden, input_data, weights, biases, FLAGS.attention_size)
 # print(pred)
 
-train_data = pd.read_csv(FLAGS.train_data_path)
-# clean data
-sentences = train_data["question_text"].map(lambda x: clean_punctuation(x))
-vocab = build_vocab(sentences)
-embeddings_index = dict(get_coefs(*o.split(" ")) for o in open(FLAGS.glove_path, encoding='utf-8'))
-oov = check_coverage(vocab,embeddings_index)
+# train_data = pd.read_csv(FLAGS.train_data_path)
+# # clean data
+# sentences = train_data["question_text"].map(lambda x: clean_punctuation(x))
+# vocab = build_vocab(sentences)
+# embeddings_index = dict(get_coefs(*o.split(" ")) for o in open(FLAGS.glove_path, encoding='utf-8'))
+# oov = check_coverage(vocab,embeddings_index)
+
+# global_step = tf.Variable(0, trainable=False)
+#
+# init = tf.group(tf.initialize_all_variables(), tf.local_variables_initializer())
+# with tf.Session() as sess:
+#     sess.run(init)
+#     for step in range(1, 5):
+#         assign_op = global_step.assign(step)
+#         print(sess.run())
+
+t1=tf.Variable(0, trainable=False)
+print(t1)

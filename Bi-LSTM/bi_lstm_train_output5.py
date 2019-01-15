@@ -121,24 +121,14 @@ def model(n_hidden, input_data, weights, biases, attention_size):
 
 
 test_data = pd.read_csv(FLAGS.test_data_path)
-# train_data, dev_data = re_build_data()
-# train_data = re_build_data()
 train_data = pd.read_csv(FLAGS.train_data_path)
 # clean data
 train_data["question_text"] = train_data["question_text"].map(lambda x: clean_punctuation(x))
 test_data["question_text"] = test_data["question_text"].map(lambda x: clean_punctuation(x))
-# dev_data["question_text"] = dev_data["question_text"].map(lambda x: clean_punctuation(x))
-# Get the response
-train_y = train_data['target'].values
-# val_y = dev_data['target'].values
-train_y = train_y.reshape(len(train_y), 1)
-# val_y = val_y.reshape(len(val_y), 1)
 # fill up the missing values
 train_X = train_data["question_text"].fillna("_##_").values
-# val_X = dev_data["question_text"].fillna("_##_").values
 test_X = test_data["question_text"].fillna("_##_").values
-
-# creates a mapping from the words to the embedding vectors=
+# creates a mapping from the words to the embedding vectors
 embeddings_index = dict(get_coefs(*o.split(" ")) for o in open(FLAGS.glove_path, encoding='utf-8'))
 vocab_size = len(embeddings_index.keys())
 print('vocab size :', vocab_size)
@@ -146,11 +136,9 @@ print('vocab size :', vocab_size)
 tokenizer = Tokenizer(num_words=vocab_size, filters='', lower=False)
 tokenizer.fit_on_texts(list(train_X))
 train_X = tokenizer.texts_to_sequences(train_X)
-# val_X = tokenizer.texts_to_sequences(val_X)
 test_X = tokenizer.texts_to_sequences(test_X)
 
 train_X = pad_sequences(train_X, maxlen=FLAGS.max_sentence_len)
-# val_X = pad_sequences(val_X, maxlen=FLAGS.max_sentence_len)
 test_X = pad_sequences(test_X, maxlen=FLAGS.max_sentence_len)
 
 all_embs = np.stack(embeddings_index.values())
@@ -162,22 +150,24 @@ word_index = tokenizer.word_index
 nb_words = min(vocab_size, len(word_index)) + 1  # only want at most vocab_size words in our vocabulary
 embedding_matrix = np.random.normal(emb_mean, emb_std,
                                     (nb_words, embed_size))
-
-for word, i in word_index.items():  # insert embeddings we that exist into our matrix
+# insert embeddings we that exist into our matrix
+for word, i in word_index.items():
     if i >= vocab_size:
         continue
     embedding_vector = embeddings_index.get(word)
     if embedding_vector is not None:
-        try:
-            embedding_matrix[i] = embedding_vector
-        except:
-            print('error:', i)
-            print(embedding_matrix.shape)
+        embedding_matrix[i] = embedding_vector
 
+# Get the labels
+train_y = train_data['target'].values
+train_y = train_y.reshape(len(train_y), 1)
+
+# input tensor
 X = tf.placeholder(tf.int32, [None, FLAGS.max_sentence_len], name='X')
 Y = tf.placeholder(tf.int32, [None, 1], name='Y')
 batch_size = tf.placeholder(tf.int64)
 
+# build dataset and batch
 dataset = tf.data.Dataset.from_tensor_slices((X, Y))
 dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batch_size)).shuffle(
     buffer_size=FLAGS.buffer_size).repeat()
@@ -190,6 +180,7 @@ test_init_op = iterator.make_initializer(test_dataset)
 
 questions, labels = iterator.get_next()
 
+# embedding layer
 embeddings = tf.get_variable(name="embeddings", shape=embedding_matrix.shape,
                              initializer=tf.constant_initializer(np.array(embedding_matrix)),
                              trainable=False)
@@ -212,8 +203,9 @@ labels = tf.sparse_to_dense(concated, tf.stack([FLAGS.batch_size, FLAGS.n_classe
 
 # Define loss and optimizer
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=labels))
-learning_rate = tf.placeholder(tf.float32, None, name='learning_rate')
-optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
+global_step = tf.identity(tf.Variable(0, trainable=False))
+optimizer = tf.train.AdamOptimizer(
+    learning_rate=cyclic_learning_rate(global_step, learning_rate=FLAGS.learning_rate)).minimize(cost)
 
 # Evaluate model
 tags = tf.argmax(labels, 1)
@@ -235,21 +227,15 @@ with tf.Session() as sess:
     sess.run(init)
     num_iter = 1000
     data = sess.run(train_init_op, feed_dict={X: train_X, Y: train_y, batch_size: FLAGS.batch_size})
-    step = 0
     num_batches = int(train_X.shape[0] / FLAGS.batch_size)
     for epoch in range(FLAGS.epoch):
         iter_cost = 0.
-        prev_iter = 0.
         for i in range(num_batches):
-            lr = sess.run(cyclic_learning_rate(step, learning_rate=FLAGS.learning_rate))
-            _, batch_loss, _ = sess.run([optimizer, cost, f1_update], feed_dict={learning_rate: lr})
+            _, batch_loss, _ = sess.run([optimizer, cost, f1_update], feed_dict={global_step: i})
             iter_cost += batch_loss
 
             # End training after
-
             if (i % num_iter == 0 and i > 0):
-                iter_cost /= (i - prev_iter)  # get average batch cost
-                prev_iter = i  # update prev_iter for next iteration
                 cur_f1 = sess.run(F1)
                 sess.run(reset_op)  # reset counters for F1
 
@@ -257,17 +243,6 @@ with tf.Session() as sess:
                 costs.append(iter_cost)
                 print("Epoch %s Iteration %s cost: %s  f1: %s " % (epoch, i, iter_cost, cur_f1))
                 batch_cost = 0.  # reset batch_cost)
-            step += 1
-
-    # bs = 100
-    # sess.run(test_init_op, feed_dict={X: val_X, Y: val_y, batch_size: bs})
-    # val_cost = 0.
-    # num_batches = int(val_X.shape[0] / bs)  # number of minibatches of size minibatch_size in the train set
-    # tf.set_random_seed(2018)
-    #
-    # for _ in range(num_batches):
-    #     sess.run(f1_update)
-    # print('Validation f1: ', sess.run(F1))
 
     sz = 30
     temp_y = train_y[:test_X.shape[0]]
