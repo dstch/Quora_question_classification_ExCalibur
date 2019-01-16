@@ -41,10 +41,10 @@ def get_coefs(word, *arr):
 
 def cyclic_learning_rate(global_step,
                          learning_rate=0.01,
-                         max_lr=0.1,
-                         step_size=20.,
+                         max_lr=0.002,
+                         step_size=3000.,
                          gamma=0.99994,
-                         mode='triangular',
+                         mode='exp_range',
                          name=None):
     if global_step is None:
         raise ValueError("global_step is required for cyclic_learning_rate.")
