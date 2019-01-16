@@ -204,8 +204,10 @@ labels = tf.sparse_to_dense(concated, tf.stack([FLAGS.batch_size, FLAGS.n_classe
 # Define loss and optimizer
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=labels))
 global_step = tf.identity(tf.Variable(0, trainable=False))
+# optimizer = tf.train.AdamOptimizer(
+#     learning_rate=cyclic_learning_rate(global_step, learning_rate=FLAGS.learning_rate)).minimize(cost)
 optimizer = tf.train.AdamOptimizer(
-    learning_rate=cyclic_learning_rate(global_step, learning_rate=FLAGS.learning_rate)).minimize(cost)
+    learning_rate=tf.train.cosine_decay(FLAGS.learning_rate, global_step, 3000)).minimize(cost)
 
 # Evaluate model
 tags = tf.argmax(labels, 1)
