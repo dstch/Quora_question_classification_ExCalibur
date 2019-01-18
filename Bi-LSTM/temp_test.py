@@ -110,31 +110,31 @@ def replace_typical_misspell(text):
     return mispellings_re.sub(replace, text)
 
 
-vocab = build_vocab(df['question_text'])
-
-sin = len(train_df[train_df["target"] == 0])
-insin = len(train_df[train_df["target"] == 1])
-persin = (sin / (sin + insin)) * 100
-perinsin = (insin / (sin + insin)) * 100
-print(
-    "# Sincere questions: {:,}({:.2f}%) and # Insincere questions: {:,}({:.2f}%)".format(sin, persin, insin, perinsin))
-# print("Sinsere:{}% Insincere: {}%".format(round(persin,2),round(perinsin,2)))
-print("# Test samples: {:,}({:.3f}% of train samples)".format(len(test_df), len(test_df) / len(train_df)))
+# vocab = build_vocab(df['question_text'])
+#
+# sin = len(train_df[train_df["target"] == 0])
+# insin = len(train_df[train_df["target"] == 1])
+# persin = (sin / (sin + insin)) * 100
+# perinsin = (insin / (sin + insin)) * 100
+# print(
+#     "# Sincere questions: {:,}({:.2f}%) and # Insincere questions: {:,}({:.2f}%)".format(sin, persin, insin, perinsin))
+# # print("Sinsere:{}% Insincere: {}%".format(round(persin,2),round(perinsin,2)))
+# print("# Test samples: {:,}({:.3f}% of train samples)".format(len(test_df), len(test_df) / len(train_df)))
 
 # lower
 train_df["question_text"] = train_df["question_text"].apply(lambda x: x.lower())
 test_df["question_text"] = test_df["question_text"].apply(lambda x: x.lower())
 
 # Clean the text
-train_df["question_text"] = train_df["question_text"].progress_apply(lambda x: clean_text(x))
+train_df["question_text"] = train_df["question_text"].apply(lambda x: clean_text(x))
 test_df["question_text"] = test_df["question_text"].apply(lambda x: clean_text(x))
 
 # Clean numbers
-train_df["question_text"] = train_df["question_text"].progress_apply(lambda x: clean_numbers(x))
+train_df["question_text"] = train_df["question_text"].apply(lambda x: clean_numbers(x))
 test_df["question_text"] = test_df["question_text"].apply(lambda x: clean_numbers(x))
 
 # Clean speelings
-train_df["question_text"] = train_df["question_text"].progress_apply(lambda x: replace_typical_misspell(x))
+train_df["question_text"] = train_df["question_text"].apply(lambda x: replace_typical_misspell(x))
 test_df["question_text"] = test_df["question_text"].apply(lambda x: replace_typical_misspell(x))
 
 ## fill up the missing values
