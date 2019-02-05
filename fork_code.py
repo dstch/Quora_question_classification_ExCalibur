@@ -70,6 +70,7 @@ def seed_everything(seed=1029):
     torch.backends.cudnn.deterministic = True
 
 
+# region
 def build_vocab(texts):
     sentences = texts.apply(lambda x: x.split()).values
     vocab = {}
@@ -92,6 +93,8 @@ print(
     "# Sincere questions: {:,}({:.2f}%) and # Insincere questions: {:,}({:.2f}%)".format(sin, persin, insin, perinsin))
 print("# Test samples: {:,}({:.3f}% of train samples)".format(len(df_test), len(df_test) / len(df_train)))
 
+
+# endregion
 
 def clean_contractions(text, mapping):
     specials = ["’", "‘", "´", "`"]
@@ -241,7 +244,7 @@ def add_features(df):
     df['total_length'] = df['question_text'].apply(len)
     df['capitals'] = df['question_text'].apply(lambda comment: sum(1 for c in comment if c.isupper()))
     df['caps_vs_length'] = df.apply(lambda row: float(row['capitals']) / float(row['total_length']),
-                                             axis=1)
+                                    axis=1)
     df['num_words'] = df.question_text.str.count('\S+')
     df['num_unique_words'] = df['question_text'].apply(lambda comment: len(set(w for w in comment.split())))
     df['words_vs_unique'] = df['num_unique_words'] / df['num_words']
